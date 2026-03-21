@@ -1,0 +1,28 @@
+{
+  "updatedAt": 0,
+  "tokens": [
+    {
+      "token": "your_us_token_1",
+      "region": "us",
+      "enabled": true,
+      "live": true,
+      "lastCheckedAt": 0,
+      "lastError": "",
+      "lastCredit": 0,
+      "consecutiveFailures": 0,
+      "allowedModels": ["jimeng-4.5", "jimeng-video-3.5-pro"],
+      "capabilityTags": ["omni_reference"]
+    },
+    {
+      "token": "your_cn_token_2",
+      "region": "cn",
+      "enabled": true,
+      "live": true,
+      "lastCheckedAt": 0,
+      "lastError": "",
+      "lastCredit": 0,
+      "consecutiveFailures": 0,
+      "allowedModels": ["jimeng-4.5", "jimeng-video-seedance-2.0-fast"]
+    }
+  ]
+}

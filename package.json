@@ -1,0 +1,93 @@
+{
+  "name": "jimeng-cli",
+  "version": "0.1.0",
+  "description": "免费的AI图像和视频生成API服务 - 基于即梦AI的逆向工程实现，提供与OpenAI API兼容的接口格式",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "bin": {
+    "jimeng": "dist/cli/index.js",
+    "jimeng-mcp": "dist/mcp/index.js"
+  },
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "directories": {
+    "dist": "dist"
+  },
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "dev": "tsup src/index.ts src/cli/index.ts src/mcp/index.ts --format cjs,esm --sourcemap --dts --watch --onSuccess \"node --enable-source-maps --no-node-snapshot dist/index.js\"",
+    "start": "node --enable-source-maps --no-node-snapshot dist/index.js",
+    "build": "tsup src/index.ts src/cli/index.ts src/mcp/index.ts --format cjs,esm --sourcemap --dts --clean",
+    "mcp:dev": "tsup src/mcp/index.ts --format cjs,esm --sourcemap --dts --watch --onSuccess \"node --enable-source-maps --no-node-snapshot dist/mcp/index.js\"",
+    "mcp:start": "node --enable-source-maps --no-node-snapshot dist/mcp/index.js",
+    "mcp:smoke": "npm run build && node scripts/mcp-smoke.mjs",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "type-check": "tsc --noEmit",
+    "token:check": "node --enable-source-maps --no-node-snapshot dist/cli/index.js token check",
+    "token:migrate:prefix": "node scripts/migrate-token-pool-prefix.mjs",
+    "cli:smoke": "npm run build && node scripts/cli-smoke.mjs"
+  },
+  "author": "Jimeng CLI Team",
+  "license": "GPL-3.0",
+  "keywords": [
+    "ai",
+    "image-generation",
+    "video-generation",
+    "openai-compatible",
+    "jimeng",
+    "api"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iptag/jimeng-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/iptag/jimeng-cli/issues"
+  },
+  "homepage": "https://github.com/iptag/jimeng-cli#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0",
+    "axios": "^1.6.7",
+    "colors": "^1.4.0",
+    "crc-32": "^1.2.2",
+    "cron": "^3.1.6",
+    "date-fns": "^3.3.1",
+    "eventsource-parser": "^1.1.2",
+    "form-data": "^4.0.0",
+    "fs-extra": "^11.2.0",
+    "https-proxy-agent": "^7.0.6",
+    "koa": "^2.15.0",
+    "koa-body": "^5.0.0",
+    "koa-range": "^0.3.0",
+    "koa-router": "^12.0.1",
+    "koa2-cors": "^2.0.6",
+    "lodash": "^4.17.21",
+    "mime": "^4.0.1",
+    "minimist": "^1.2.8",
+    "randomstring": "^1.3.0",
+    "semver": "^7.7.2",
+    "socks-proxy-agent": "^8.0.5",
+    "uuid": "^9.0.1",
+    "yaml": "^2.3.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/koa": "^3.0.2",
+    "@types/lodash": "^4.14.202",
+    "@types/mime": "^3.0.4",
+    "prettier": "^3.6.2",
+    "tsup": "^8.0.2",
+    "typescript": "^5.3.3"
+  }
+}
