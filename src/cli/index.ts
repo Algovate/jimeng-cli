@@ -872,7 +872,7 @@ async function handleTokenCheck(argv: string[]): Promise<void> {
 
 async function handleTokenList(argv: string[]): Promise<void> {
   const args = minimist(argv, {
-    string: ["base-url"],
+    string: ["base-url", "transport"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand("list");
@@ -881,10 +881,17 @@ async function handleTokenList(argv: string[]): Promise<void> {
     return;
   }
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const { payload } = await requestJson(`${baseUrl}/token/pool`, { method: "GET" });
-  const normalized = unwrapBody(payload);
+  const transport = parseTransportMode(args);
+  if (transport === "direct") await ensureTokenPoolReady();
+  const normalized =
+    transport === "direct"
+      ? {
+          summary: tokenPool.getSummary(),
+          items: tokenPool.getEntries(true),
+        }
+      : unwrapBody((await requestJson(`${baseUrl}/token/pool`, { method: "GET" })).payload);
   if (args.json) {
-    printCommandJson("token.list", normalized);
+    printCommandJson("token.list", normalized, { transport });
     return;
   }
   const body = normalized && typeof normalized === "object" ? (normalized as JsonRecord) : {};
@@ -930,7 +937,7 @@ async function handleTokenPointsOrReceive(
 
 async function handleTokenAddOrRemove(argv: string[], action: "add" | "remove"): Promise<void> {
   const args = minimist(argv, {
-    string: ["token", "token-file", "base-url", "region"],
+    string: ["token", "token-file", "base-url", "region", "transport"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand(action);
@@ -940,14 +947,30 @@ async function handleTokenAddOrRemove(argv: string[], action: "add" | "remove"):
   }
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
   const region = getRegionWithDefault(args);
+  const transport = parseTransportMode(args);
+  if (transport === "direct") await ensureTokenPoolReady();
   const tokens = await collectTokensFromArgs(args, usage, true);
-  const { payload } = await requestJson(`${baseUrl}/token/pool/${action}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ tokens, ...(region ? { region } : {}) }),
-  });
+  const regionCode = parseRegionOrFail(region);
+  const payload =
+    transport === "direct"
+      ? action === "add"
+        ? {
+            ...(await tokenPool.addTokens(tokens, { defaultRegion: regionCode || undefined })),
+            summary: tokenPool.getSummary(),
+          }
+        : {
+            ...(await tokenPool.removeTokens(tokens)),
+            summary: tokenPool.getSummary(),
+          }
+      : (
+          await requestJson(`${baseUrl}/token/pool/${action}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tokens, ...(region ? { region } : {}) }),
+          })
+        ).payload;
   if (args.json) {
-    printCommandJson(`token.${action}`, unwrapBody(payload));
+    printCommandJson(`token.${action}`, unwrapBody(payload), { transport, region });
     return;
   }
   printJson(unwrapBody(payload));
@@ -955,7 +978,7 @@ async function handleTokenAddOrRemove(argv: string[], action: "add" | "remove"):
 
 async function handleTokenEnableOrDisable(argv: string[], action: "enable" | "disable"): Promise<void> {
   const args = minimist(argv, {
-    string: ["token", "base-url"],
+    string: ["token", "base-url", "transport"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand(action);
@@ -968,13 +991,23 @@ async function handleTokenEnableOrDisable(argv: string[], action: "enable" | "di
     failWithUsage("Missing required --token.", usage);
   }
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const { payload } = await requestJson(`${baseUrl}/token/pool/${action}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
-  });
+  const transport = parseTransportMode(args);
+  if (transport === "direct") await ensureTokenPoolReady();
+  const payload =
+    transport === "direct"
+      ? {
+          updated: await tokenPool.setTokenEnabled(token, action === "enable"),
+          summary: tokenPool.getSummary(),
+        }
+      : (
+          await requestJson(`${baseUrl}/token/pool/${action}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token }),
+          })
+        ).payload;
   if (args.json) {
-    printCommandJson(`token.${action}`, unwrapBody(payload));
+    printCommandJson(`token.${action}`, unwrapBody(payload), { transport });
     return;
   }
   printJson(unwrapBody(payload));
@@ -982,7 +1015,7 @@ async function handleTokenEnableOrDisable(argv: string[], action: "enable" | "di
 
 async function handleTokenPool(argv: string[]): Promise<void> {
   const args = minimist(argv, {
-    string: ["base-url"],
+    string: ["base-url", "transport"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand("pool");
@@ -991,10 +1024,17 @@ async function handleTokenPool(argv: string[]): Promise<void> {
     return;
   }
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const { payload } = await requestJson(`${baseUrl}/token/pool`, { method: "GET" });
-  const normalized = unwrapBody(payload);
+  const transport = parseTransportMode(args);
+  if (transport === "direct") await ensureTokenPoolReady();
+  const normalized =
+    transport === "direct"
+      ? {
+          summary: tokenPool.getSummary(),
+          items: tokenPool.getEntries(true),
+        }
+      : unwrapBody((await requestJson(`${baseUrl}/token/pool`, { method: "GET" })).payload);
   if (args.json) {
-    printCommandJson("token.pool", normalized);
+    printCommandJson("token.pool", normalized, { transport });
     return;
   }
   const body = normalized && typeof normalized === "object" ? (normalized as JsonRecord) : {};
@@ -1009,7 +1049,7 @@ async function handleTokenPoolCheckOrReload(
   action: "pool-check" | "pool-reload"
 ): Promise<void> {
   const args = minimist(argv, {
-    string: ["base-url"],
+    string: ["base-url", "transport"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand(action);
@@ -1018,10 +1058,28 @@ async function handleTokenPoolCheckOrReload(
     return;
   }
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const endpoint = action === "pool-check" ? "/token/pool/check" : "/token/pool/reload";
-  const { payload } = await requestJson(`${baseUrl}${endpoint}`, { method: "POST" });
+  const transport = parseTransportMode(args);
+  if (transport === "direct") await ensureTokenPoolReady();
+  const payload =
+    transport === "direct"
+      ? action === "pool-check"
+        ? {
+            ...(await tokenPool.runHealthCheck()),
+            summary: tokenPool.getSummary(),
+          }
+        : (await tokenPool.reloadFromDisk(), {
+            reloaded: true,
+            summary: tokenPool.getSummary(),
+            items: tokenPool.getEntries(true),
+          })
+      : (
+          await requestJson(
+            `${baseUrl}${action === "pool-check" ? "/token/pool/check" : "/token/pool/reload"}`,
+            { method: "POST" }
+          )
+        ).payload;
   if (args.json) {
-    printCommandJson(`token.${action}`, unwrapBody(payload));
+    printCommandJson(`token.${action}`, unwrapBody(payload), { transport });
     return;
   }
   printJson(unwrapBody(payload));
@@ -1954,7 +2012,7 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
     name: "list",
     description: "List token pool entries",
     usageLine: "  jimeng token list [options]",
-    options: [JSON_OPTION, BASE_URL_OPTION, HELP_OPTION],
+    options: [JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
     handler: handleTokenList,
   },
   {
@@ -2009,6 +2067,7 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
       "  --region <region>        Region for add, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
       BASE_URL_OPTION,
+      TRANSPORT_OPTION,
       HELP_OPTION,
     ],
     handler: async (argv) => handleTokenAddOrRemove(argv, "add"),
@@ -2022,6 +2081,7 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
       JSON_OPTION,
       BASE_URL_OPTION,
+      TRANSPORT_OPTION,
       HELP_OPTION,
     ],
     handler: async (argv) => handleTokenAddOrRemove(argv, "remove"),
@@ -2030,35 +2090,35 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
     name: "enable",
     description: "Enable one token in token-pool",
     usageLine: "  jimeng token enable --token <token> [options]",
-    options: ["  --token <token>          Required, a single token", JSON_OPTION, BASE_URL_OPTION, HELP_OPTION],
+    options: ["  --token <token>          Required, a single token", JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
     handler: async (argv) => handleTokenEnableOrDisable(argv, "enable"),
   },
   {
     name: "disable",
     description: "Disable one token in token-pool",
     usageLine: "  jimeng token disable --token <token> [options]",
-    options: ["  --token <token>          Required, a single token", JSON_OPTION, BASE_URL_OPTION, HELP_OPTION],
+    options: ["  --token <token>          Required, a single token", JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
     handler: async (argv) => handleTokenEnableOrDisable(argv, "disable"),
   },
   {
     name: "pool",
     description: "Show token-pool summary and entries",
     usageLine: "  jimeng token pool [options]",
-    options: [JSON_OPTION, BASE_URL_OPTION, HELP_OPTION],
+    options: [JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
     handler: handleTokenPool,
   },
   {
     name: "pool-check",
     description: "Trigger token-pool health check",
     usageLine: "  jimeng token pool-check [options]",
-    options: [JSON_OPTION, BASE_URL_OPTION, HELP_OPTION],
+    options: [JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
     handler: async (argv) => handleTokenPoolCheckOrReload(argv, "pool-check"),
   },
   {
     name: "pool-reload",
     description: "Reload token-pool from disk",
     usageLine: "  jimeng token pool-reload [options]",
-    options: [JSON_OPTION, BASE_URL_OPTION, HELP_OPTION],
+    options: [JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
     handler: async (argv) => handleTokenPoolCheckOrReload(argv, "pool-reload"),
   },
 ];
