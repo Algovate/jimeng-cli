@@ -1,10 +1,11 @@
 {
   "name": "jimeng-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "免费的AI图像和视频生成API服务 - 基于即梦AI的逆向工程实现，提供与OpenAI API兼容的接口格式",
   "type": "module",
   "main": "dist/index.cjs",
   "bin": {
+    "jimeng-cli": "dist/cli/index.js",
     "jimeng": "dist/cli/index.js",
     "jimeng-mcp": "dist/mcp/index.js"
   },
