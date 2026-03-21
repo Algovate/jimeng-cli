@@ -65,7 +65,7 @@ function usageRoot(): string {
 function usageModelsList(): string {
   return buildUsageText("  jimeng models list [options]", [
     "  --base-url <url>         API base URL, default http://127.0.0.1:5100",
-    "  --region <region>        Optional X-Region header (cn/us/hk/jp/sg)",
+    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --verbose                Print rich model fields",
     "  --json                   Print full JSON response",
     TRANSPORT_OPTION,
@@ -96,7 +96,7 @@ function usageTokenRoot(): string {
 function usageImageGenerate(): string {
   return buildUsageText("  jimeng image generate --prompt <text> [options]", [
     "  --token <token>          Optional, override server token-pool",
-    "  --region <region>        Optional X-Region header (cn/us/hk/jp/sg)",
+    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --prompt <text>          Required",
     "  --model <model>          Default jimeng-4.5",
     "  --ratio <ratio>          Default 1:1",
@@ -120,7 +120,7 @@ function usageImageEdit(): string {
     "  jimeng image edit --prompt <text> --image <path_or_url> [--image <path_or_url> ...] [options]",
     [
     "  --token <token>          Optional, override server token-pool",
-    "  --region <region>        Optional X-Region header (cn/us/hk/jp/sg)",
+    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --prompt <text>          Required",
     "  --image <path_or_url>    Required, can be repeated (1-10)",
     "  --model <model>          Default jimeng-4.5",
@@ -150,7 +150,7 @@ function usageImageEdit(): string {
 function usageVideoGenerate(): string {
   return buildUsageText("  jimeng video generate --prompt <text> [options]", [
     "  --token <token>          Optional, override server token-pool",
-    "  --region <region>        Optional X-Region header (cn/us/hk/jp/sg)",
+    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --prompt <text>          Required",
     "  --mode <mode>            Optional, text_to_video (default), image_to_video, first_last_frames, or omni_reference",
     "  --image-file <input>     Image input, can be repeated (path or URL)",
@@ -198,7 +198,7 @@ function usageVideoGenerate(): string {
 function usageTaskGet(): string {
   return buildUsageText("  jimeng task get --task-id <id> [options]", [
     "  --token <token>          Optional, override server token-pool",
-    "  --region <region>        Optional X-Region header (cn/us/hk/jp/sg)",
+    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --task-id <id>           Required history/task id",
     "  --type <type>            Optional image or video",
     "  --response-format <fmt>  Optional url or b64_json",
@@ -212,7 +212,7 @@ function usageTaskGet(): string {
 function usageTaskWait(): string {
   return buildUsageText("  jimeng task wait --task-id <id> [options]", [
     "  --token <token>          Optional, override server token-pool",
-    "  --region <region>        Optional X-Region header (cn/us/hk/jp/sg)",
+    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --task-id <id>           Required history/task id",
     "  --type <type>            Optional image or video",
     "  --response-format <fmt>  Optional url or b64_json",
@@ -256,6 +256,10 @@ function getSingleString(args: Record<string, unknown>, key: string): string | u
   const raw = args[key];
   if (typeof raw === "string" && raw.trim().length > 0) return raw.trim();
   return undefined;
+}
+
+function getRegionWithDefault(args: Record<string, unknown>): string {
+  return getSingleString(args, "region") || "cn";
 }
 
 function toStringList(raw: unknown): string[] {
@@ -816,7 +820,7 @@ async function handleTokenCheck(argv: string[]): Promise<void> {
   }
 
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const tokens = await collectTokensFromArgs(args, usage, true);
   if (!args.json) {
     console.log(`Checking ${tokens.length} token(s) against ${baseUrl}/token/check`);
@@ -908,7 +912,7 @@ async function handleTokenPointsOrReceive(
     return;
   }
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const tokens = await collectTokensFromArgs(args, usage, false);
   const { payload } = await requestJson(`${baseUrl}/token/${action}`, {
     method: "POST",
@@ -935,7 +939,7 @@ async function handleTokenAddOrRemove(argv: string[], action: "add" | "remove"):
     return;
   }
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const tokens = await collectTokensFromArgs(args, usage, true);
   const { payload } = await requestJson(`${baseUrl}/token/pool/${action}`, {
     method: "POST",
@@ -1035,7 +1039,7 @@ async function handleModelsList(argv: string[]): Promise<void> {
   }
 
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const transport = parseTransportMode(args);
   const token = getSingleString(args, "token");
   let normalized: unknown;
@@ -1123,7 +1127,7 @@ async function handleImageGenerate(argv: string[]): Promise<void> {
   }
 
   const token = getSingleString(args, "token");
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const prompt = ensurePrompt(getSingleString(args, "prompt"), usageImageGenerate());
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
   const transport = parseTransportMode(args);
@@ -1254,7 +1258,7 @@ async function handleImageEdit(argv: string[]): Promise<void> {
   }
 
   const token = getSingleString(args, "token");
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const prompt = ensurePrompt(getSingleString(args, "prompt"), usageImageEdit());
   const sources = toStringList(args.image);
   if (sources.length === 0) {
@@ -1680,7 +1684,7 @@ async function handleVideoGenerate(argv: string[]): Promise<void> {
   }
 
   const token = getSingleString(args, "token");
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const prompt = ensurePrompt(getSingleString(args, "prompt"), usage);
   const cliMode = parseVideoCliMode(args, usage);
   const inputPlan = collectVideoInputPlan(args, usage);
@@ -1801,7 +1805,7 @@ async function handleTaskGet(argv: string[]): Promise<void> {
   const type = getSingleString(args, "type");
   const responseFormat = getSingleString(args, "response-format");
   const token = getSingleString(args, "token");
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const transport = parseTransportMode(args);
   const isJson = Boolean(args.json);
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
@@ -1867,7 +1871,7 @@ async function handleTaskWait(argv: string[]): Promise<void> {
   const taskId = getSingleString(args, "task-id");
   if (!taskId) fail(`Missing required --task-id.\n\n${usageTaskWait()}`);
   const token = getSingleString(args, "token");
-  const region = getSingleString(args, "region");
+  const region = getRegionWithDefault(args);
   const transport = parseTransportMode(args);
   const isJson = Boolean(args.json);
   const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
@@ -1960,7 +1964,7 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
     options: [
       "  --token <token>          Token, can be repeated",
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
-      "  --region <region>        Required for non-pool token (cn/us/hk/jp/sg)",
+      "  --region <region>        X-Region, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
       BASE_URL_OPTION,
       HELP_OPTION,
@@ -1974,7 +1978,7 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
     options: [
       "  --token <token>          Token, can be repeated",
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
-      "  --region <region>        Filter tokens by region via X-Region (cn/us/hk/jp/sg)",
+      "  --region <region>        Filter tokens by X-Region, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
       BASE_URL_OPTION,
       HELP_OPTION,
@@ -1988,7 +1992,7 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
     options: [
       "  --token <token>          Token, can be repeated",
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
-      "  --region <region>        Filter tokens by region via X-Region (cn/us/hk/jp/sg)",
+      "  --region <region>        Filter tokens by X-Region, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
       BASE_URL_OPTION,
       HELP_OPTION,
@@ -2002,7 +2006,7 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
     options: [
       "  --token <token>          Token, can be repeated",
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
-      "  --region <region>        Required for add (cn/us/hk/jp/sg)",
+      "  --region <region>        Region for add, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
       BASE_URL_OPTION,
       HELP_OPTION,
