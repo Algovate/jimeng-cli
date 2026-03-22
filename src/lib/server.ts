@@ -1,5 +1,5 @@
 import Koa from 'koa';
-import KoaRouter from 'koa-router';
+import KoaRouter from '@koa/router';
 import koaRange from 'koa-range';
 import koaCors from "koa2-cors";
 import koaBody from 'koa-body';

@@ -1,5 +1,7 @@
 # jimeng-cli
 
+[![npm version](https://img.shields.io/npm/v/jimeng-cli.svg)](https://www.npmjs.com/package/jimeng-cli)
+
 即梦/CapCut 图像与视频生成 API 服务，提供 OpenAI 风格接口，并内置 CLI 与 MCP Server。
 
 ## 功能
