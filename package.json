@@ -1,6 +1,6 @@
 {
   "name": "jimeng-cli",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "即梦/CapCut 图像与视频生成 CLI 与 MCP 工具",
   "type": "module",
   "main": "dist/index.cjs",
