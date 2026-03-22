@@ -801,7 +801,7 @@ export async function getTokenLiveStatus(refreshToken: string, regionInfo: Regio
         ? (resultObj.data as Record<string, unknown>)
         : null;
     // request 内部已调用 checkResult，ret!=0 会抛错；判活以 user_id 为准。
-    // 一些响应把 user_id 放在 data 里，需兼容 data.user_id。
+    // user_id 可能位于根对象或 data 对象。
     return Boolean(resultObj.user_id || nestedData?.user_id);
   } catch {
     return false;

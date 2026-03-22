@@ -1,7 +1,7 @@
 {
   "name": "jimeng-cli",
   "version": "0.1.4",
-  "description": "即梦/CapCut 图像与视频生成 CLI 与 MCP 工具（direct-only）",
+  "description": "即梦/CapCut 图像与视频生成 CLI 与 MCP 工具",
   "type": "module",
   "main": "dist/index.cjs",
   "bin": {
@@ -36,7 +36,6 @@
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "type-check": "tsc --noEmit",
     "token:check": "node --enable-source-maps --no-node-snapshot dist/cli/index.js token check",
-    "token:migrate:prefix": "node scripts/migrate-token-pool-prefix.mjs",
     "cli:smoke": "npm run build && node scripts/cli-smoke.mjs"
   },
   "author": "Jimeng CLI Team",

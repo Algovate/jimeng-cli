@@ -2,28 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/jimeng-cli.svg)](https://www.npmjs.com/package/jimeng-cli)
 
-即梦/CapCut 图像与视频生成工具集，提供 direct 模式 CLI 与 MCP Server（stdio）。
-
-## 重大变更
-
-- 已移除本地 HTTP server（`jimeng serve`）
-- MCP 已改为 direct 调用，不再依赖本地 `/v1/*`、`/token/*` 端点
-
-## 后向兼容说明
-
-- 本次为破坏性收敛：不再提供本地 HTTP API 能力。
-- CLI 仅保留 direct 执行链路，不再支持 `--transport server`。
-- MCP 不再读取 `JIMENG_API_BASE_URL`，仅走本地 direct 调用。
-- 进程入口 `node dist/index.js` 不再启动服务，只输出迁移提示并退出。
-
-## 迁移指引
-
-| 旧用法 | 新用法 |
-|---|---|
-| `jimeng serve` | 不再需要；直接使用 `jimeng` 子命令或 `jimeng-mcp` |
-| `--transport server` | 删除该参数（默认 direct） |
-| `JIMENG_API_BASE_URL=http://127.0.0.1:5100` | 删除该环境变量 |
-| 调用本地 `/v1/*`、`/token/*` | 改为 CLI 命令或 MCP 工具调用 |
+即梦/CapCut 图像与视频生成工具集，提供 CLI 与 MCP Server（stdio）。
 
 ## 要求
 
