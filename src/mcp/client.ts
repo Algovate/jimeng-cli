@@ -1,7 +1,14 @@
-import axios, { type AxiosInstance } from "axios";
 import fs from "node:fs";
 import path from "node:path";
-import FormData from "form-data";
+
+import { DEFAULT_IMAGE_MODEL } from "@/api/consts/common.ts";
+import { buildRegionInfo, type RegionCode } from "@/api/controllers/core.ts";
+import { generateImageComposition, generateImages } from "@/api/controllers/images.ts";
+import { getLiveModels } from "@/api/controllers/models.ts";
+import { getTaskResponse, waitForTaskResponse } from "@/api/controllers/tasks.ts";
+import { DEFAULT_MODEL as DEFAULT_VIDEO_MODEL, generateVideo } from "@/api/controllers/videos.ts";
+import tokenPool from "@/lib/session-pool.ts";
+import util from "@/lib/util.ts";
 
 import type { McpConfig } from "./config.ts";
 import type { JsonObject, MultipartUploadFile } from "./types.ts";
@@ -10,61 +17,225 @@ export interface McpRequestOptions {
   token?: string;
 }
 
+function resolveTaskType(value: unknown): "image" | "video" {
+  return value === "video" ? "video" : "image";
+}
+
 export class JimengApiClient {
-  private readonly http: AxiosInstance;
   private readonly defaultToken?: string;
+  private tokenPoolReady = false;
 
   constructor(config: McpConfig) {
     this.defaultToken = config.apiToken;
-    this.http = axios.create({
-      baseURL: config.apiBaseUrl,
-      timeout: config.httpTimeoutMs
-    });
   }
 
-  private buildHeaders(options?: McpRequestOptions): Record<string, string> {
-    const token = options?.token || this.defaultToken;
-    if (!token) return {};
-    return { Authorization: `Bearer ${token}` };
+  private resolveToken(options?: McpRequestOptions): string | undefined {
+    return options?.token || this.defaultToken;
   }
 
-  private async request<T = unknown>(
-    method: "GET" | "POST",
-    path: string,
+  private async ensureTokenPoolReady(): Promise<void> {
+    if (this.tokenPoolReady) return;
+    await tokenPool.init();
+    this.tokenPoolReady = true;
+  }
+
+  private async pickModelToken(
+    requestedModel: string,
+    taskType: "image" | "video",
     options?: McpRequestOptions,
-    body?: JsonObject
-  ): Promise<T> {
-    if (method === "GET") {
-      const { data } = await this.http.get<T>(path, {
-        headers: this.buildHeaders(options)
-      });
-      return data;
+    requiredCapabilityTags: string[] = []
+  ): Promise<{ token: string; regionInfo: any }> {
+    await this.ensureTokenPoolReady();
+    const token = this.resolveToken(options);
+    const tokenPick = tokenPool.pickTokenForRequest({
+      authorization: token ? `Bearer ${token}` : undefined,
+      requestedModel,
+      taskType,
+      requiredCapabilityTags,
+    });
+
+    if (!tokenPick.token || !tokenPick.region) {
+      throw new Error(tokenPick.reason || "Missing available token for model request");
     }
 
-    const { data } = await this.http.post<T>(path, body, {
-      headers: this.buildHeaders(options)
-    });
-    return data;
+    return {
+      token: tokenPick.token,
+      regionInfo: buildRegionInfo(tokenPick.region),
+    };
+  }
+
+  private async pickTaskToken(
+    options?: McpRequestOptions,
+    type: "image" | "video" = "image"
+  ): Promise<{ token: string; regionInfo: any }> {
+    await this.ensureTokenPoolReady();
+    const token = this.resolveToken(options);
+    if (token) {
+      const entry = tokenPool.getTokenEntry(token);
+      if (!entry?.region) {
+        throw new Error("Missing region for token. Register token with region in token-pool.");
+      }
+      return { token, regionInfo: buildRegionInfo(entry.region) };
+    }
+
+    const candidates = tokenPool
+      .getEntries(false)
+      .filter((item) => item.enabled && item.live !== false && item.region)
+      .filter((item) => {
+        const modelHint = type === "video" ? "video" : "jimeng";
+        return !item.allowedModels?.length || item.allowedModels.some((m) => m.includes(modelHint));
+      });
+    if (candidates.length === 0) {
+      throw new Error("No token available for task request. Configure token-pool or pass token.");
+    }
+    return { token: candidates[0].token, regionInfo: buildRegionInfo(candidates[0].region as RegionCode) };
   }
 
   async healthCheck(): Promise<any> {
-    return this.request("GET", "/ping");
+    return "pong";
   }
 
   async listModels(options?: McpRequestOptions): Promise<any> {
-    return this.request("GET", "/v1/models", options);
+    await this.ensureTokenPoolReady();
+    const token = this.resolveToken(options);
+    const authorization = token ? `Bearer ${token}` : undefined;
+    const region = token ? tokenPool.getTokenEntry(token)?.region : undefined;
+    const result = await getLiveModels(authorization, region);
+    return {
+      source: result.source,
+      data: result.data,
+    };
   }
 
   async generateImage(body: Record<string, unknown>, options?: McpRequestOptions): Promise<any> {
-    return this.request("POST", "/v1/images/generations", options, body);
+    const model = typeof body.model === "string" && body.model.trim().length > 0
+      ? body.model
+      : DEFAULT_IMAGE_MODEL;
+    const prompt = String(body.prompt || "");
+    const tokenCtx = await this.pickModelToken(model, "image", options);
+
+    const responseFormat = body.response_format === "b64_json" ? "b64_json" : "url";
+    const imageResult = await generateImages(
+      model,
+      prompt,
+      {
+        ratio: body.ratio as string | undefined,
+        resolution: body.resolution as string | undefined,
+        sampleStrength: body.sample_strength as number | undefined,
+        negativePrompt: body.negative_prompt as string | undefined,
+        intelligentRatio: body.intelligent_ratio as boolean | undefined,
+        wait: body.wait as boolean | undefined,
+        waitTimeoutSeconds: body.wait_timeout_seconds as number | undefined,
+        pollIntervalMs: body.poll_interval_ms as number | undefined,
+      },
+      tokenCtx.token,
+      tokenCtx.regionInfo
+    );
+
+    if (!Array.isArray(imageResult)) {
+      return imageResult;
+    }
+
+    const data = responseFormat === "b64_json"
+      ? (await Promise.all(imageResult.map((url) => util.fetchFileBASE64(url)))).map((b64) => ({ b64_json: b64 }))
+      : imageResult.map((url) => ({ url }));
+
+    return {
+      created: util.unixTimestamp(),
+      data,
+    };
   }
 
   async editImage(body: Record<string, unknown>, options?: McpRequestOptions): Promise<any> {
-    return this.request("POST", "/v1/images/compositions", options, body);
+    const model = typeof body.model === "string" && body.model.trim().length > 0
+      ? body.model
+      : DEFAULT_IMAGE_MODEL;
+    const prompt = String(body.prompt || "");
+    const images = Array.isArray(body.images)
+      ? body.images.filter((item): item is string => typeof item === "string")
+      : [];
+    const tokenCtx = await this.pickModelToken(model, "image", options);
+
+    const responseFormat = body.response_format === "b64_json" ? "b64_json" : "url";
+    const compositionResult = await generateImageComposition(
+      model,
+      prompt,
+      images,
+      {
+        ratio: body.ratio as string | undefined,
+        resolution: body.resolution as string | undefined,
+        sampleStrength: body.sample_strength as number | undefined,
+        negativePrompt: body.negative_prompt as string | undefined,
+        intelligentRatio: body.intelligent_ratio as boolean | undefined,
+        wait: body.wait as boolean | undefined,
+        waitTimeoutSeconds: body.wait_timeout_seconds as number | undefined,
+        pollIntervalMs: body.poll_interval_ms as number | undefined,
+      },
+      tokenCtx.token,
+      tokenCtx.regionInfo
+    );
+
+    if (!Array.isArray(compositionResult)) {
+      return compositionResult;
+    }
+
+    const data = responseFormat === "b64_json"
+      ? (await Promise.all(compositionResult.map((url) => util.fetchFileBASE64(url)))).map((b64) => ({ b64_json: b64 }))
+      : compositionResult.map((url) => ({ url }));
+
+    return {
+      created: util.unixTimestamp(),
+      data,
+      input_images: images.length,
+      composition_type: "multi_image_synthesis",
+    };
   }
 
   async generateVideo(body: Record<string, unknown>, options?: McpRequestOptions): Promise<any> {
-    return this.request("POST", "/v1/videos/generations", options, body);
+    const model = typeof body.model === "string" && body.model.trim().length > 0
+      ? body.model
+      : DEFAULT_VIDEO_MODEL;
+    const prompt = String(body.prompt || "");
+
+    const functionMode = typeof body.functionMode === "string" ? body.functionMode : "first_last_frames";
+    const requiredTags = functionMode === "omni_reference" ? ["omni_reference"] : [];
+    const tokenCtx = await this.pickModelToken(model, "video", options, requiredTags);
+
+    const videoResult = await generateVideo(
+      model,
+      prompt,
+      {
+        ratio: body.ratio as string | undefined,
+        resolution: body.resolution as string | undefined,
+        duration: body.duration as number | undefined,
+        filePaths: (body.filePaths || body.file_paths) as string[] | undefined,
+        files: body.files as any,
+        httpRequest: { body } as any,
+        functionMode,
+        wait: body.wait as boolean | undefined,
+        waitTimeoutSeconds: body.wait_timeout_seconds as number | undefined,
+        pollIntervalMs: body.poll_interval_ms as number | undefined,
+      },
+      tokenCtx.token,
+      tokenCtx.regionInfo
+    );
+
+    if (typeof videoResult !== "string") {
+      return videoResult;
+    }
+
+    if (body.response_format === "b64_json") {
+      const videoBase64 = await util.fetchFileBASE64(videoResult);
+      return {
+        created: util.unixTimestamp(),
+        data: [{ b64_json: videoBase64, revised_prompt: prompt }],
+      };
+    }
+
+    return {
+      created: util.unixTimestamp(),
+      data: [{ url: videoResult, revised_prompt: prompt }],
+    };
   }
 
   async getTask(
@@ -72,11 +243,12 @@ export class JimengApiClient {
     options?: McpRequestOptions,
     query?: { type?: string; response_format?: string }
   ): Promise<any> {
-    const search = new URLSearchParams();
-    if (query?.type) search.set("type", query.type);
-    if (query?.response_format) search.set("response_format", query.response_format);
-    const suffix = search.toString() ? `?${search.toString()}` : "";
-    return this.request("GET", `/v1/tasks/${encodeURIComponent(taskId)}${suffix}`, options);
+    const type = query?.type === "video" ? "video" : query?.type === "image" ? "image" : undefined;
+    const tokenCtx = await this.pickTaskToken(options, resolveTaskType(type));
+    return getTaskResponse(taskId, tokenCtx.token, tokenCtx.regionInfo, {
+      type,
+      responseFormat: query?.response_format === "b64_json" ? "b64_json" : "url",
+    });
   }
 
   async waitTask(
@@ -84,7 +256,14 @@ export class JimengApiClient {
     body: Record<string, unknown>,
     options?: McpRequestOptions
   ): Promise<any> {
-    return this.request("POST", `/v1/tasks/${encodeURIComponent(taskId)}/wait`, options, body);
+    const type = body.type === "video" ? "video" : body.type === "image" ? "image" : undefined;
+    const tokenCtx = await this.pickTaskToken(options, resolveTaskType(type));
+    return waitForTaskResponse(taskId, tokenCtx.token, tokenCtx.regionInfo, {
+      type,
+      responseFormat: body.response_format === "b64_json" ? "b64_json" : "url",
+      waitTimeoutSeconds: body.wait_timeout_seconds as number | undefined,
+      pollIntervalMs: body.poll_interval_ms as number | undefined,
+    });
   }
 
   async generateVideoOmni(
@@ -92,33 +271,24 @@ export class JimengApiClient {
     options?: McpRequestOptions,
     uploadFiles: MultipartUploadFile[] = []
   ): Promise<any> {
-    if (uploadFiles.length === 0) {
-      return this.request("POST", "/v1/videos/generations", options, body);
-    }
-
-    const form = new FormData();
-    for (const [key, value] of Object.entries(body)) {
-      if (value == null) continue;
-      if (Array.isArray(value)) {
-        for (const item of value) {
-          if (item != null) form.append(key, String(item));
-        }
-        continue;
-      }
-      form.append(key, String(value));
-    }
-
+    const files: Record<string, any> = {};
     for (const file of uploadFiles) {
-      form.append(file.fieldName, fs.createReadStream(file.filePath), {
-        filename: path.basename(file.filePath)
-      });
+      files[file.fieldName] = {
+        filepath: file.filePath,
+        originalFilename: path.basename(file.filePath),
+      };
+      if (!fs.existsSync(file.filePath)) {
+        throw new Error(`Local file not found: ${file.filePath}`);
+      }
     }
 
-    const headers = {
-      ...this.buildHeaders(options),
-      ...form.getHeaders()
-    };
-    const { data } = await this.http.post("/v1/videos/generations", form, { headers });
-    return data;
+    return this.generateVideo(
+      {
+        ...body,
+        functionMode: "omni_reference",
+        files,
+      },
+      options
+    );
   }
 }

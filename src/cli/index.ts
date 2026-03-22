@@ -9,21 +9,23 @@ import minimist from "minimist";
 import config from "@/lib/config.ts";
 import logger from "@/lib/logger.ts";
 import tokenPool from "@/lib/session-pool.ts";
-import { buildRegionInfo, parseRegionCode, type RegionCode } from "@/api/controllers/core.ts";
+import {
+  buildRegionInfo,
+  getCredit,
+  getTokenLiveStatus,
+  parseRegionCode,
+  receiveCredit,
+  type RegionCode
+} from "@/api/controllers/core.ts";
 import { getLiveModels } from "@/api/controllers/models.ts";
 import { generateImages, generateImageComposition } from "@/api/controllers/images.ts";
 import { generateVideo } from "@/api/controllers/videos.ts";
 import { getTaskResponse, waitForTaskResponse } from "@/api/controllers/tasks.ts";
 
-const DEFAULT_BASE_URL = "http://127.0.0.1:5100";
-const DEFAULT_TRANSPORT = "direct";
-
 type JsonRecord = Record<string, unknown>;
 type CliHandler = (argv: string[]) => Promise<void>;
 type UsageSection = { title: string; lines: string[] };
 
-const BASE_URL_OPTION = "  --base-url <url>         API base URL, default http://127.0.0.1:5100";
-const TRANSPORT_OPTION = "  --transport <mode>       direct (default) or server";
 const JSON_OPTION = "  --json                   Output structured JSON";
 const HELP_OPTION = "  --help                   Show help";
 
@@ -64,11 +66,9 @@ function usageRoot(): string {
 
 function usageModelsList(): string {
   return buildUsageText("  jimeng models list [options]", [
-    "  --base-url <url>         API base URL, default http://127.0.0.1:5100",
     "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --verbose                Print rich model fields",
     "  --json                   Print full JSON response",
-    TRANSPORT_OPTION,
     HELP_OPTION,
   ]);
 }
@@ -95,7 +95,7 @@ function usageTokenRoot(): string {
 
 function usageImageGenerate(): string {
   return buildUsageText("  jimeng image generate --prompt <text> [options]", [
-    "  --token <token>          Optional, override server token-pool",
+    "  --token <token>          Optional, override token-pool selection",
     "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --prompt <text>          Required",
     "  --model <model>          Default jimeng-4.5",
@@ -107,8 +107,6 @@ function usageImageGenerate(): string {
     "  --wait / --no-wait       Default wait; --no-wait returns task only",
     "  --wait-timeout-seconds   Optional wait timeout override",
     "  --poll-interval-ms       Optional poll interval override",
-    BASE_URL_OPTION,
-    TRANSPORT_OPTION,
     JSON_OPTION,
     "  --output-dir <dir>       Default ./pic/cli-image-generate",
     HELP_OPTION,
@@ -119,7 +117,7 @@ function usageImageEdit(): string {
   return buildUsageText(
     "  jimeng image edit --prompt <text> --image <path_or_url> [--image <path_or_url> ...] [options]",
     [
-    "  --token <token>          Optional, override server token-pool",
+    "  --token <token>          Optional, override token-pool selection",
     "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --prompt <text>          Required",
     "  --image <path_or_url>    Required, can be repeated (1-10)",
@@ -132,8 +130,6 @@ function usageImageEdit(): string {
     "  --wait / --no-wait       Default wait; --no-wait returns task only",
     "  --wait-timeout-seconds   Optional wait timeout override",
     "  --poll-interval-ms       Optional poll interval override",
-    BASE_URL_OPTION,
-    TRANSPORT_OPTION,
     JSON_OPTION,
     "  --output-dir <dir>       Default ./pic/cli-image-edit",
     HELP_OPTION,
@@ -149,7 +145,7 @@ function usageImageEdit(): string {
 
 function usageVideoGenerate(): string {
   return buildUsageText("  jimeng video generate --prompt <text> [options]", [
-    "  --token <token>          Optional, override server token-pool",
+    "  --token <token>          Optional, override token-pool selection",
     "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --prompt <text>          Required",
     "  --mode <mode>            Optional, text_to_video (default), image_to_video, first_last_frames, or omni_reference",
@@ -166,8 +162,6 @@ function usageVideoGenerate(): string {
     "  --wait / --no-wait       Default wait; --no-wait returns task only",
     "  --wait-timeout-seconds   Optional wait timeout override",
     "  --poll-interval-ms       Optional poll interval override",
-    BASE_URL_OPTION,
-    TRANSPORT_OPTION,
     JSON_OPTION,
     "  --output-dir <dir>       Default ./pic/cli-video-generate",
     HELP_OPTION,
@@ -197,13 +191,11 @@ function usageVideoGenerate(): string {
 
 function usageTaskGet(): string {
   return buildUsageText("  jimeng task get --task-id <id> [options]", [
-    "  --token <token>          Optional, override server token-pool",
+    "  --token <token>          Optional, override token-pool selection",
     "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --task-id <id>           Required history/task id",
     "  --type <type>            Optional image or video",
     "  --response-format <fmt>  Optional url or b64_json",
-    BASE_URL_OPTION,
-    TRANSPORT_OPTION,
     JSON_OPTION,
     HELP_OPTION,
   ]);
@@ -211,22 +203,19 @@ function usageTaskGet(): string {
 
 function usageTaskWait(): string {
   return buildUsageText("  jimeng task wait --task-id <id> [options]", [
-    "  --token <token>          Optional, override server token-pool",
+    "  --token <token>          Optional, override token-pool selection",
     "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
     "  --task-id <id>           Required history/task id",
     "  --type <type>            Optional image or video",
     "  --response-format <fmt>  Optional url or b64_json",
     "  --wait-timeout-seconds   Optional wait timeout override",
     "  --poll-interval-ms       Optional poll interval override",
-    BASE_URL_OPTION,
-    TRANSPORT_OPTION,
     JSON_OPTION,
     HELP_OPTION,
   ]);
 }
 
 function configureCliLogging(command: string | undefined): void {
-  if (command === "serve") return;
   if (process.env.JIMENG_CLI_VERBOSE_LOGS === "true") {
     process.env.JIMENG_CLI_SILENT_LOGS = "false";
     return;
@@ -271,18 +260,6 @@ function toStringList(raw: unknown): string[] {
       .filter(Boolean);
   }
   return [];
-}
-
-function sanitizeBaseUrl(baseUrl: string | undefined): string {
-  return (baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
-}
-
-type TransportMode = "server" | "direct";
-
-function parseTransportMode(args: Record<string, unknown>): TransportMode {
-  const raw = (getSingleString(args, "transport") || DEFAULT_TRANSPORT).toLowerCase();
-  if (raw === "server" || raw === "direct") return raw;
-  fail(`Invalid --transport: ${raw}. Use server or direct.`);
 }
 
 let tokenPoolReady = false;
@@ -357,11 +334,6 @@ function ensurePrompt(prompt: string | undefined, usage: string): string {
     fail(`Missing required --prompt.\n\n${usage}`);
   }
   return prompt;
-}
-
-function buildAuthHeaders(token: string | undefined): Record<string, string> {
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
 }
 
 function isHttpUrl(input: string): boolean {
@@ -489,97 +461,6 @@ function unwrapBody(payload: unknown): unknown {
     return body.data;
   }
   return payload;
-}
-
-function assertBusinessSuccess(payload: unknown): void {
-  if (!payload || typeof payload !== "object") return;
-  const body = payload as JsonRecord;
-  if (typeof body.code === "number" && body.code !== 0) {
-    const msg = typeof body.message === "string" ? body.message : `Business error: code=${body.code}`;
-    fail(msg);
-  }
-}
-
-async function requestJson(
-  endpoint: string,
-  init: RequestInit
-): Promise<{ payload: unknown }> {
-  let response: Response;
-  try {
-    response = await fetch(endpoint, init);
-  } catch (error) {
-    const err = error as Error & { cause?: { code?: string } };
-    const reason = err?.cause?.code || err.message || String(error);
-    let hint = "";
-    try {
-      const url = new URL(endpoint);
-      const isLocalServer =
-        (url.hostname === "127.0.0.1" || url.hostname === "localhost") && url.port === "5100";
-      if (isLocalServer) {
-        hint =
-          "\nHint: local server is unreachable. Start service with `jimeng serve`, or run command with `--transport direct`.";
-      }
-    } catch {
-      // ignore URL parse errors and keep generic message
-    }
-    fail(`Network request failed: ${reason}${hint}`);
-  }
-  const text = await response.text();
-
-  let payload: unknown = {};
-  try {
-    payload = text ? (JSON.parse(text) as unknown) : {};
-  } catch {
-    fail(`Non-JSON response (${response.status}): ${text.slice(0, 500)}`);
-  }
-
-  if (!response.ok) {
-    fail(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
-  }
-
-  assertBusinessSuccess(payload);
-  return { payload };
-}
-
-function collectImageUrls(payload: unknown): string[] {
-  const normalized = unwrapBody(payload);
-  if (normalized && typeof normalized === "object") {
-    const data = (normalized as JsonRecord).data;
-    if (Array.isArray(data)) {
-      return data
-        .map((item) => (item && typeof item === "object" ? (item as JsonRecord).url : undefined))
-        .filter((url): url is string => typeof url === "string" && url.length > 0);
-    }
-  }
-  return [];
-}
-
-function collectVideoUrl(payload: unknown): string | null {
-  const normalized = unwrapBody(payload);
-  if (!normalized || typeof normalized !== "object") return null;
-
-  const first = Array.isArray((normalized as JsonRecord).data)
-    ? ((normalized as JsonRecord).data as unknown[])[0]
-    : undefined;
-  if (!first || typeof first !== "object") return null;
-
-  const firstObj = first as JsonRecord;
-  const direct = firstObj.url;
-  if (typeof direct === "string" && direct.length > 0) return direct;
-
-  const nestedVideo = firstObj.video;
-  if (nestedVideo && typeof nestedVideo === "object") {
-    const nestedUrl = (nestedVideo as JsonRecord).url;
-    if (typeof nestedUrl === "string" && nestedUrl.length > 0) return nestedUrl;
-  }
-
-  const videoUrl = firstObj.video_url;
-  if (typeof videoUrl === "string" && videoUrl.length > 0) return videoUrl;
-
-  const downloadUrl = firstObj.download_url;
-  if (typeof downloadUrl === "string" && downloadUrl.length > 0) return downloadUrl;
-
-  return null;
 }
 
 type TaskInfo = {
@@ -777,11 +658,6 @@ async function collectTokensFromArgs(
   return deduped;
 }
 
-function buildAuthorizationForTokens(tokens: string[]): Record<string, string> {
-  if (tokens.length === 0) return {};
-  return { Authorization: `Bearer ${tokens.join(",")}` };
-}
-
 function formatUnixMs(value: unknown): string {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "-";
   return new Date(value).toISOString();
@@ -810,7 +686,7 @@ function printTokenEntriesTable(items: unknown[]): void {
 
 async function handleTokenCheck(argv: string[]): Promise<void> {
   const args = minimist(argv, {
-    string: ["token", "token-file", "base-url", "region"],
+    string: ["token", "token-file", "region"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand("check");
@@ -818,31 +694,25 @@ async function handleTokenCheck(argv: string[]): Promise<void> {
     console.log(usage);
     return;
   }
-
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
   const region = getRegionWithDefault(args);
+  const regionCode = parseRegionOrFail(region);
+  if (!regionCode) {
+    fail("Missing region. Use --region cn/us/hk/jp/sg.");
+  }
   const tokens = await collectTokensFromArgs(args, usage, true);
   if (!args.json) {
-    console.log(`Checking ${tokens.length} token(s) against ${baseUrl}/token/check`);
+    console.log(`Checking ${tokens.length} token(s) with direct mode`);
   }
 
+  await ensureTokenPoolReady();
   let invalid = 0;
   let requestErrors = 0;
   const results: Array<{ token_masked: string; live?: boolean; error?: string }> = [];
   for (const token of tokens) {
     const masked = maskToken(token);
     try {
-      const { payload } = await requestJson(`${baseUrl}/token/check`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(region ? { "X-Region": region } : {}),
-        },
-        body: JSON.stringify({ token, ...(region ? { region } : {}) }),
-      });
-      const normalized = unwrapBody(payload);
-      const live =
-        normalized && typeof normalized === "object" ? (normalized as JsonRecord).live : undefined;
+      const live = await getTokenLiveStatus(token, buildRegionInfo(regionCode));
+      await tokenPool.syncTokenCheckResult(token, live);
       if (live === true) {
         if (!args.json) console.log(`[OK]   ${masked} live=true`);
       } else {
@@ -872,7 +742,6 @@ async function handleTokenCheck(argv: string[]): Promise<void> {
 
 async function handleTokenList(argv: string[]): Promise<void> {
   const args = minimist(argv, {
-    string: ["base-url", "transport"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand("list");
@@ -880,18 +749,13 @@ async function handleTokenList(argv: string[]): Promise<void> {
     console.log(usage);
     return;
   }
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const transport = parseTransportMode(args);
-  if (transport === "direct") await ensureTokenPoolReady();
-  const normalized =
-    transport === "direct"
-      ? {
-          summary: tokenPool.getSummary(),
-          items: tokenPool.getEntries(true),
-        }
-      : unwrapBody((await requestJson(`${baseUrl}/token/pool`, { method: "GET" })).payload);
+  await ensureTokenPoolReady();
+  const normalized = {
+    summary: tokenPool.getSummary(),
+    items: tokenPool.getEntries(true),
+  };
   if (args.json) {
-    printCommandJson("token.list", normalized, { transport });
+    printCommandJson("token.list", normalized);
     return;
   }
   const body = normalized && typeof normalized === "object" ? (normalized as JsonRecord) : {};
@@ -910,7 +774,7 @@ async function handleTokenPointsOrReceive(
   action: "points" | "receive"
 ): Promise<void> {
   const args = minimist(argv, {
-    string: ["token", "token-file", "base-url", "region"],
+    string: ["token", "token-file", "region"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand(action);
@@ -918,26 +782,63 @@ async function handleTokenPointsOrReceive(
     console.log(usage);
     return;
   }
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
   const region = getRegionWithDefault(args);
+  const regionCode = parseRegionOrFail(region);
+  await ensureTokenPoolReady();
   const tokens = await collectTokensFromArgs(args, usage, false);
-  const { payload } = await requestJson(`${baseUrl}/token/${action}`, {
-    method: "POST",
-    headers: {
-      ...buildAuthorizationForTokens(tokens),
-      ...(region ? { "X-Region": region } : {}),
-    },
-  });
+  const resolvedTokens = tokens.length > 0
+    ? tokens.map((token) => {
+        const entryRegion = tokenPool.getTokenEntry(token)?.region;
+        const finalRegion = regionCode || entryRegion;
+        if (!finalRegion) {
+          fail(`Missing region for token ${maskToken(token)}. Provide --region or register token region in token-pool.`);
+        }
+        return { token, region: finalRegion };
+      })
+    : tokenPool.getEntries(false)
+        .filter((item) => item.enabled && item.live !== false && item.region)
+        .filter((item) => (regionCode ? item.region === regionCode : true))
+        .map((item) => ({ token: item.token, region: item.region! }));
+  if (resolvedTokens.length === 0) {
+    fail("No token available. Provide --token or configure token-pool.");
+  }
+  const payload = action === "points"
+    ? await Promise.all(
+        resolvedTokens.map(async (item) => ({
+          token: item.token,
+          points: await getCredit(item.token, buildRegionInfo(item.region)),
+        }))
+      )
+    : await Promise.all(
+        resolvedTokens.map(async (item) => {
+          const currentCredit = await getCredit(item.token, buildRegionInfo(item.region));
+          if (currentCredit.totalCredit <= 0) {
+            try {
+              await receiveCredit(item.token, buildRegionInfo(item.region));
+              const updatedCredit = await getCredit(item.token, buildRegionInfo(item.region));
+              return { token: item.token, credits: updatedCredit, received: true };
+            } catch (error: any) {
+              return {
+                token: item.token,
+                credits: currentCredit,
+                received: false,
+                error: error?.message || String(error),
+              };
+            }
+          }
+          return { token: item.token, credits: currentCredit, received: false };
+        })
+      );
   if (args.json) {
-    printCommandJson(`token.${action}`, unwrapBody(payload));
+    printCommandJson(`token.${action}`, payload);
     return;
   }
-  printJson(unwrapBody(payload));
+  printJson(payload);
 }
 
 async function handleTokenAddOrRemove(argv: string[], action: "add" | "remove"): Promise<void> {
   const args = minimist(argv, {
-    string: ["token", "token-file", "base-url", "region", "transport"],
+    string: ["token", "token-file", "region"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand(action);
@@ -945,32 +846,21 @@ async function handleTokenAddOrRemove(argv: string[], action: "add" | "remove"):
     console.log(usage);
     return;
   }
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
   const region = getRegionWithDefault(args);
-  const transport = parseTransportMode(args);
-  if (transport === "direct") await ensureTokenPoolReady();
+  await ensureTokenPoolReady();
   const tokens = await collectTokensFromArgs(args, usage, true);
   const regionCode = parseRegionOrFail(region);
-  const payload =
-    transport === "direct"
-      ? action === "add"
-        ? {
-            ...(await tokenPool.addTokens(tokens, { defaultRegion: regionCode || undefined })),
-            summary: tokenPool.getSummary(),
-          }
-        : {
-            ...(await tokenPool.removeTokens(tokens)),
-            summary: tokenPool.getSummary(),
-          }
-      : (
-          await requestJson(`${baseUrl}/token/pool/${action}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tokens, ...(region ? { region } : {}) }),
-          })
-        ).payload;
+  const payload = action === "add"
+    ? {
+        ...(await tokenPool.addTokens(tokens, { defaultRegion: regionCode || undefined })),
+        summary: tokenPool.getSummary(),
+      }
+    : {
+        ...(await tokenPool.removeTokens(tokens)),
+        summary: tokenPool.getSummary(),
+      };
   if (args.json) {
-    printCommandJson(`token.${action}`, unwrapBody(payload), { transport, region });
+    printCommandJson(`token.${action}`, unwrapBody(payload), { region });
     return;
   }
   printJson(unwrapBody(payload));
@@ -978,7 +868,7 @@ async function handleTokenAddOrRemove(argv: string[], action: "add" | "remove"):
 
 async function handleTokenEnableOrDisable(argv: string[], action: "enable" | "disable"): Promise<void> {
   const args = minimist(argv, {
-    string: ["token", "base-url", "transport"],
+    string: ["token"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand(action);
@@ -990,24 +880,13 @@ async function handleTokenEnableOrDisable(argv: string[], action: "enable" | "di
   if (!token) {
     failWithUsage("Missing required --token.", usage);
   }
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const transport = parseTransportMode(args);
-  if (transport === "direct") await ensureTokenPoolReady();
-  const payload =
-    transport === "direct"
-      ? {
-          updated: await tokenPool.setTokenEnabled(token, action === "enable"),
-          summary: tokenPool.getSummary(),
-        }
-      : (
-          await requestJson(`${baseUrl}/token/pool/${action}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token }),
-          })
-        ).payload;
+  await ensureTokenPoolReady();
+  const payload = {
+    updated: await tokenPool.setTokenEnabled(token, action === "enable"),
+    summary: tokenPool.getSummary(),
+  };
   if (args.json) {
-    printCommandJson(`token.${action}`, unwrapBody(payload), { transport });
+    printCommandJson(`token.${action}`, unwrapBody(payload));
     return;
   }
   printJson(unwrapBody(payload));
@@ -1015,7 +894,6 @@ async function handleTokenEnableOrDisable(argv: string[], action: "enable" | "di
 
 async function handleTokenPool(argv: string[]): Promise<void> {
   const args = minimist(argv, {
-    string: ["base-url", "transport"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand("pool");
@@ -1023,18 +901,13 @@ async function handleTokenPool(argv: string[]): Promise<void> {
     console.log(usage);
     return;
   }
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const transport = parseTransportMode(args);
-  if (transport === "direct") await ensureTokenPoolReady();
-  const normalized =
-    transport === "direct"
-      ? {
-          summary: tokenPool.getSummary(),
-          items: tokenPool.getEntries(true),
-        }
-      : unwrapBody((await requestJson(`${baseUrl}/token/pool`, { method: "GET" })).payload);
+  await ensureTokenPoolReady();
+  const normalized = {
+    summary: tokenPool.getSummary(),
+    items: tokenPool.getEntries(true),
+  };
   if (args.json) {
-    printCommandJson("token.pool", normalized, { transport });
+    printCommandJson("token.pool", normalized);
     return;
   }
   const body = normalized && typeof normalized === "object" ? (normalized as JsonRecord) : {};
@@ -1049,7 +922,6 @@ async function handleTokenPoolCheckOrReload(
   action: "pool-check" | "pool-reload"
 ): Promise<void> {
   const args = minimist(argv, {
-    string: ["base-url", "transport"],
     boolean: ["help", "json"],
   });
   const usage = usageTokenSubcommand(action);
@@ -1057,29 +929,19 @@ async function handleTokenPoolCheckOrReload(
     console.log(usage);
     return;
   }
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const transport = parseTransportMode(args);
-  if (transport === "direct") await ensureTokenPoolReady();
-  const payload =
-    transport === "direct"
-      ? action === "pool-check"
-        ? {
-            ...(await tokenPool.runHealthCheck()),
-            summary: tokenPool.getSummary(),
-          }
-        : (await tokenPool.reloadFromDisk(), {
-            reloaded: true,
-            summary: tokenPool.getSummary(),
-            items: tokenPool.getEntries(true),
-          })
-      : (
-          await requestJson(
-            `${baseUrl}${action === "pool-check" ? "/token/pool/check" : "/token/pool/reload"}`,
-            { method: "POST" }
-          )
-        ).payload;
+  await ensureTokenPoolReady();
+  const payload = action === "pool-check"
+    ? {
+        ...(await tokenPool.runHealthCheck()),
+        summary: tokenPool.getSummary(),
+      }
+    : (await tokenPool.reloadFromDisk(), {
+        reloaded: true,
+        summary: tokenPool.getSummary(),
+        items: tokenPool.getEntries(true),
+      });
   if (args.json) {
-    printCommandJson(`token.${action}`, unwrapBody(payload), { transport });
+    printCommandJson(`token.${action}`, unwrapBody(payload));
     return;
   }
   printJson(unwrapBody(payload));
@@ -1087,7 +949,7 @@ async function handleTokenPoolCheckOrReload(
 
 async function handleModelsList(argv: string[]): Promise<void> {
   const args = minimist(argv, {
-    string: ["base-url", "region", "transport", "token"],
+    string: ["region", "token"],
     boolean: ["help", "json", "verbose"],
   });
 
@@ -1096,30 +958,15 @@ async function handleModelsList(argv: string[]): Promise<void> {
     return;
   }
 
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
   const region = getRegionWithDefault(args);
-  const transport = parseTransportMode(args);
   const token = getSingleString(args, "token");
-  let normalized: unknown;
-
-  if (transport === "direct") {
-    await ensureTokenPoolReady();
-    const auth = token ? `Bearer ${token}` : undefined;
-    const direct = await getLiveModels(auth, region);
-    normalized = { object: "list", data: direct.data };
-  } else {
-    const endpoint = `${baseUrl}/v1/models`;
-    const { payload } = await requestJson(endpoint, {
-      method: "GET",
-      headers: {
-        ...(region ? { "X-Region": region } : {}),
-      },
-    });
-    normalized = unwrapBody(payload);
-  }
+  await ensureTokenPoolReady();
+  const auth = token ? `Bearer ${token}` : undefined;
+  const direct = await getLiveModels(auth, region);
+  const normalized: unknown = { object: "list", data: direct.data };
 
   if (args.json) {
-    printCommandJson("models.list", normalized, { transport, region: region || null });
+    printCommandJson("models.list", normalized, { region: region || null });
     return;
   }
 
@@ -1169,12 +1016,10 @@ async function handleImageGenerate(argv: string[]): Promise<void> {
       "resolution",
       "negative-prompt",
       "sample-strength",
-      "base-url",
       "output-dir",
       "wait-timeout-seconds",
       "poll-interval-ms",
-      "transport",
-    ],
+      ],
     boolean: ["help", "intelligent-ratio", "wait", "json"],
     default: { wait: true },
   });
@@ -1187,8 +1032,6 @@ async function handleImageGenerate(argv: string[]): Promise<void> {
   const token = getSingleString(args, "token");
   const region = getRegionWithDefault(args);
   const prompt = ensurePrompt(getSingleString(args, "prompt"), usageImageGenerate());
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const transport = parseTransportMode(args);
   const outputDir = getSingleString(args, "output-dir") || "./pic/cli-image-generate";
 
   const body: JsonRecord = {
@@ -1216,59 +1059,36 @@ async function handleImageGenerate(argv: string[]): Promise<void> {
     body.sample_strength = parsed;
   }
 
-  let urls: string[] = [];
-  if (transport === "direct") {
-    const pick = await pickDirectTokenForGeneration(
-      token,
-      region,
-      String(body.model || "jimeng-4.5"),
-      "image"
-    );
-    const result = await generateImages(
-      String(body.model || "jimeng-4.5"),
-      String(prompt),
-      {
-        ratio: String(body.ratio || "1:1"),
-        resolution: String(body.resolution || "2k"),
-        sampleStrength: typeof body.sample_strength === "number" ? body.sample_strength : undefined,
-        negativePrompt: typeof body.negative_prompt === "string" ? body.negative_prompt : undefined,
-        intelligentRatio: Boolean(body.intelligent_ratio),
-        wait,
-        waitTimeoutSeconds: typeof body.wait_timeout_seconds === "number" ? body.wait_timeout_seconds : undefined,
-        pollIntervalMs: typeof body.poll_interval_ms === "number" ? body.poll_interval_ms : undefined,
-      },
-      pick.token,
-      buildRegionInfo(pick.region)
-    );
-    if (!Array.isArray(result)) {
-      if (isJson) {
-        printCommandJson("image.generate", result, { transport, wait });
-      }
-      else printTaskInfo(result);
-      return;
+  const pick = await pickDirectTokenForGeneration(
+    token,
+    region,
+    String(body.model || "jimeng-4.5"),
+    "image"
+  );
+  const result = await generateImages(
+    String(body.model || "jimeng-4.5"),
+    String(prompt),
+    {
+      ratio: String(body.ratio || "1:1"),
+      resolution: String(body.resolution || "2k"),
+      sampleStrength: typeof body.sample_strength === "number" ? body.sample_strength : undefined,
+      negativePrompt: typeof body.negative_prompt === "string" ? body.negative_prompt : undefined,
+      intelligentRatio: Boolean(body.intelligent_ratio),
+      wait,
+      waitTimeoutSeconds: typeof body.wait_timeout_seconds === "number" ? body.wait_timeout_seconds : undefined,
+      pollIntervalMs: typeof body.poll_interval_ms === "number" ? body.poll_interval_ms : undefined,
+    },
+    pick.token,
+    buildRegionInfo(pick.region)
+  );
+  if (!Array.isArray(result)) {
+    if (isJson) {
+      printCommandJson("image.generate", result, { wait });
     }
-    urls = result;
-  } else {
-    const endpoint = `${baseUrl}/v1/images/generations`;
-    const { payload } = await requestJson(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...buildAuthHeaders(token),
-        ...(region ? { "X-Region": region } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-    urls = collectImageUrls(payload);
-    const taskInfo = collectTaskInfo(payload);
-    if (taskInfo && wait === false) {
-      if (isJson) {
-        printCommandJson("image.generate", taskInfo, { transport, wait });
-      }
-      else printTaskInfo(taskInfo);
-      return;
-    }
+    else printTaskInfo(result);
+    return;
   }
+  const urls: string[] = result;
   if (urls.length === 0) {
     fail("No image URL found in response.");
   }
@@ -1281,7 +1101,7 @@ async function handleImageGenerate(argv: string[]): Promise<void> {
         data: urls.map((url) => ({ url })),
         files: savedFiles,
       },
-      { transport, wait }
+      { wait }
     );
   } else {
     printDownloadSummary("image", savedFiles);
@@ -1300,12 +1120,10 @@ async function handleImageEdit(argv: string[]): Promise<void> {
       "resolution",
       "negative-prompt",
       "sample-strength",
-      "base-url",
       "output-dir",
       "wait-timeout-seconds",
       "poll-interval-ms",
-      "transport",
-    ],
+      ],
     boolean: ["help", "intelligent-ratio", "wait", "json"],
     default: { wait: true },
   });
@@ -1325,9 +1143,6 @@ async function handleImageEdit(argv: string[]): Promise<void> {
   if (sources.length > 10) {
     fail("At most 10 images are supported for image edit.");
   }
-
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  const transport = parseTransportMode(args);
   const outputDir = getSingleString(args, "output-dir") || "./pic/cli-image-edit";
   const model = getSingleString(args, "model") || "jimeng-4.5";
   const ratio = getSingleString(args, "ratio") || "1:1";
@@ -1344,134 +1159,48 @@ async function handleImageEdit(argv: string[]): Promise<void> {
     fail("Mixed image sources are not supported. Use all URLs or all local files.");
   }
 
-  let urls: string[] = [];
-  if (transport === "direct") {
-    const pick = await pickDirectTokenForGeneration(token, region, model, "image");
-    const images: Array<string | Buffer> = [];
-    if (allUrls) {
-      images.push(...sources);
-    } else {
-      for (const source of sources) {
-        const imagePath = path.resolve(source);
-        if (!(await pathExists(imagePath))) {
-          fail(`Image file not found: ${imagePath}`);
-        }
-        images.push(await readFile(imagePath));
-      }
-    }
-    const sampleStrength = sampleStrengthRaw ? Number(sampleStrengthRaw) : undefined;
-    if (sampleStrengthRaw && !Number.isFinite(sampleStrength)) {
-      fail(`Invalid --sample-strength: ${sampleStrengthRaw}`);
-    }
-    const result = await generateImageComposition(
-      model,
-      prompt,
-      images,
-      {
-        ratio,
-        resolution,
-        sampleStrength: sampleStrength as number | undefined,
-        negativePrompt,
-        intelligentRatio,
-        wait,
-        waitTimeoutSeconds: parsePositiveNumberOption(args, "wait-timeout-seconds"),
-        pollIntervalMs: parsePositiveNumberOption(args, "poll-interval-ms"),
-      },
-      pick.token,
-      buildRegionInfo(pick.region)
-    );
-    if (!Array.isArray(result)) {
-      if (isJson) {
-        printCommandJson("image.edit", result, { transport, wait });
-      }
-      else printTaskInfo(result);
-      return;
-    }
-    urls = result;
+  const pick = await pickDirectTokenForGeneration(token, region, model, "image");
+  const images: Array<string | Buffer> = [];
+  if (allUrls) {
+    images.push(...sources);
   } else {
-    const endpoint = `${baseUrl}/v1/images/compositions`;
-
-    let payload: unknown = {};
-    if (allUrls) {
-      const body: JsonRecord = {
-        prompt,
-        model,
-        ratio,
-        resolution,
-        images: sources,
-      };
-      if (negativePrompt) body.negative_prompt = negativePrompt;
-      if (intelligentRatio) body.intelligent_ratio = true;
-      applyWaitOptionsToBody(body, args);
-      if (sampleStrengthRaw) {
-        const parsed = Number(sampleStrengthRaw);
-        if (!Number.isFinite(parsed)) {
-          fail(`Invalid --sample-strength: ${sampleStrengthRaw}`);
-        }
-        body.sample_strength = parsed;
+    for (const source of sources) {
+      const imagePath = path.resolve(source);
+      if (!(await pathExists(imagePath))) {
+        fail(`Image file not found: ${imagePath}`);
       }
-
-      const result = await requestJson(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...buildAuthHeaders(token),
-          ...(region ? { "X-Region": region } : {}),
-        },
-        body: JSON.stringify(body),
-      });
-      payload = result.payload;
-    } else {
-      const form = new FormData();
-      form.append("prompt", prompt);
-      form.append("model", model);
-      form.append("ratio", ratio);
-      form.append("resolution", resolution);
-      if (negativePrompt) form.append("negative_prompt", negativePrompt);
-      if (intelligentRatio) form.append("intelligent_ratio", "true");
-      applyWaitOptionsToForm(form, args);
-      if (sampleStrengthRaw) {
-        const parsed = Number(sampleStrengthRaw);
-        if (!Number.isFinite(parsed)) {
-          fail(`Invalid --sample-strength: ${sampleStrengthRaw}`);
-        }
-        form.append("sample_strength", String(parsed));
-      }
-
-      for (const source of sources) {
-        const imagePath = path.resolve(source);
-        if (!(await pathExists(imagePath))) {
-          fail(`Image file not found: ${imagePath}`);
-        }
-        const imageBuffer = await readFile(imagePath);
-        form.append(
-          "images",
-          new Blob([imageBuffer], { type: detectImageMime(imagePath) }),
-          path.basename(imagePath)
-        );
-      }
-
-      const result = await requestJson(endpoint, {
-        method: "POST",
-        headers: {
-          ...buildAuthHeaders(token),
-          ...(region ? { "X-Region": region } : {}),
-        },
-        body: form,
-      });
-      payload = result.payload;
-    }
-
-    urls = collectImageUrls(payload);
-    const taskInfo = collectTaskInfo(payload);
-    if (taskInfo && wait === false) {
-      if (isJson) {
-        printCommandJson("image.edit", taskInfo, { transport, wait });
-      }
-      else printTaskInfo(taskInfo);
-      return;
+      images.push(await readFile(imagePath));
     }
   }
+  const sampleStrength = sampleStrengthRaw ? Number(sampleStrengthRaw) : undefined;
+  if (sampleStrengthRaw && !Number.isFinite(sampleStrength)) {
+    fail(`Invalid --sample-strength: ${sampleStrengthRaw}`);
+  }
+  const result = await generateImageComposition(
+    model,
+    prompt,
+    images,
+    {
+      ratio,
+      resolution,
+      sampleStrength: sampleStrength as number | undefined,
+      negativePrompt,
+      intelligentRatio,
+      wait,
+      waitTimeoutSeconds: parsePositiveNumberOption(args, "wait-timeout-seconds"),
+      pollIntervalMs: parsePositiveNumberOption(args, "poll-interval-ms"),
+    },
+    pick.token,
+    buildRegionInfo(pick.region)
+  );
+  if (!Array.isArray(result)) {
+    if (isJson) {
+      printCommandJson("image.edit", result, { wait });
+    }
+    else printTaskInfo(result);
+    return;
+  }
+  const urls: string[] = result;
   if (urls.length === 0) {
     fail("No image URL found in response.");
   }
@@ -1484,7 +1213,7 @@ async function handleImageEdit(argv: string[]): Promise<void> {
         data: urls.map((url) => ({ url })),
         files: savedFiles,
       },
-      { transport, wait }
+      { wait }
     );
   } else {
     printDownloadSummary("image", savedFiles);
@@ -1726,12 +1455,10 @@ async function handleVideoGenerate(argv: string[]): Promise<void> {
       "ratio",
       "resolution",
       "duration",
-      "base-url",
       "output-dir",
       "wait-timeout-seconds",
       "poll-interval-ms",
-      "transport",
-    ],
+      ],
     boolean: ["help", "wait", "json"],
     default: { wait: true },
   });
@@ -1746,9 +1473,7 @@ async function handleVideoGenerate(argv: string[]): Promise<void> {
   const prompt = ensurePrompt(getSingleString(args, "prompt"), usage);
   const cliMode = parseVideoCliMode(args, usage);
   const inputPlan = collectVideoInputPlan(args, usage);
-  const transport = parseTransportMode(args);
 
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
   const outputDir = getSingleString(args, "output-dir") || "./pic/cli-video-generate";
   const model = getSingleString(args, "model")
     || (cliMode === "omni_reference" ? "jimeng-video-seedance-2.0-fast" : "jimeng-video-3.0");
@@ -1759,73 +1484,36 @@ async function handleVideoGenerate(argv: string[]): Promise<void> {
   const duration = getSingleString(args, "duration") || "5";
   const wait = Boolean(args.wait);
   const isJson = Boolean(args.json);
-  let videoUrl: string | null = null;
+  const requiredCapabilityTags = cliMode === "omni_reference" ? ["omni_reference"] : [];
+  const pick = await pickDirectTokenForGeneration(token, region, model, "video", requiredCapabilityTags);
+  const directInputs = await buildDirectVideoInputPayload(cliMode, inputPlan);
+  const result = await generateVideo(
+    model,
+    prompt,
+    {
+      ratio,
+      resolution,
+      duration: Number(duration),
+      filePaths: directInputs.filePaths,
+      files: directInputs.files,
+      httpRequest: directInputs.httpRequest,
+      functionMode,
+      wait,
+      waitTimeoutSeconds: parsePositiveNumberOption(args, "wait-timeout-seconds"),
+      pollIntervalMs: parsePositiveNumberOption(args, "poll-interval-ms"),
+    },
+    pick.token,
+    buildRegionInfo(pick.region)
+  );
 
-  if (transport === "direct") {
-    const requiredCapabilityTags = cliMode === "omni_reference" ? ["omni_reference"] : [];
-    const pick = await pickDirectTokenForGeneration(token, region, model, "video", requiredCapabilityTags);
-    const directInputs = await buildDirectVideoInputPayload(cliMode, inputPlan);
-    const result = await generateVideo(
-      model,
-      prompt,
-      {
-        ratio,
-        resolution,
-        duration: Number(duration),
-        filePaths: directInputs.filePaths,
-        files: directInputs.files,
-        httpRequest: directInputs.httpRequest,
-        functionMode,
-        wait,
-        waitTimeoutSeconds: parsePositiveNumberOption(args, "wait-timeout-seconds"),
-        pollIntervalMs: parsePositiveNumberOption(args, "poll-interval-ms"),
-      },
-      pick.token,
-      buildRegionInfo(pick.region)
-    );
-
-    if (typeof result !== "string") {
-      if (isJson) {
-        printCommandJson("video.generate", result, { transport, wait, mode: cliMode });
-      }
-      else printTaskInfo(result);
-      return;
+  if (typeof result !== "string") {
+    if (isJson) {
+      printCommandJson("video.generate", result, { wait, mode: cliMode });
     }
-    videoUrl = result;
-  } else {
-    const form = new FormData();
-    form.append("prompt", prompt);
-    form.append("model", model);
-    form.append("functionMode", functionMode);
-    form.append("ratio", ratio);
-    form.append("resolution", resolution);
-    form.append("duration", duration);
-    applyWaitOptionsToForm(form, args);
-    await appendVideoInputs(form, inputPlan);
-
-    const endpoint = `${baseUrl}/v1/videos/generations`;
-    const { payload } = await requestJson(endpoint, {
-      method: "POST",
-      headers: {
-        ...buildAuthHeaders(token),
-        ...(region ? { "X-Region": region } : {}),
-      },
-      body: form,
-    });
-
-    videoUrl = collectVideoUrl(payload);
-    const taskInfo = collectTaskInfo(payload);
-    if (taskInfo && wait === false) {
-      if (isJson) {
-        printCommandJson("video.generate", taskInfo, { transport, wait, mode: cliMode });
-      }
-      else printTaskInfo(taskInfo);
-      return;
-    }
-    if (!videoUrl) {
-      fail(`No video URL found in response: ${JSON.stringify(payload)}`);
-    }
+    else printTaskInfo(result);
+    return;
   }
+  const videoUrl: string = result;
 
   const { buffer, contentType } = await downloadBinary(videoUrl);
   const dir = path.resolve(outputDir);
@@ -1842,7 +1530,7 @@ async function handleVideoGenerate(argv: string[]): Promise<void> {
         data: [{ url: videoUrl }],
         files: [filePath],
       },
-      { transport, wait, mode: cliMode }
+      { wait, mode: cliMode }
     );
   } else {
     printDownloadSummary("video", [filePath]);
@@ -1851,7 +1539,7 @@ async function handleVideoGenerate(argv: string[]): Promise<void> {
 
 async function handleTaskGet(argv: string[]): Promise<void> {
   const args = minimist(argv, {
-    string: ["token", "region", "task-id", "type", "response-format", "base-url", "transport"],
+    string: ["token", "region", "task-id", "type", "response-format"],
     boolean: ["help", "json"],
   });
   if (args.help) {
@@ -1864,46 +1552,27 @@ async function handleTaskGet(argv: string[]): Promise<void> {
   const responseFormat = getSingleString(args, "response-format");
   const token = getSingleString(args, "token");
   const region = getRegionWithDefault(args);
-  const transport = parseTransportMode(args);
   const isJson = Boolean(args.json);
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
-  let normalized: unknown;
-
-  if (transport === "direct") {
-    const pick = await pickDirectTokenForTask(token, region);
-    normalized = await getTaskResponse(
-      taskId,
-      pick.token,
-      buildRegionInfo(pick.region),
-      {
-        type: type === "image" || type === "video" ? type : undefined,
-        responseFormat: responseFormat === "b64_json" ? "b64_json" : "url",
-      }
-    );
-  } else {
-    const query = new URLSearchParams();
-    if (type) query.set("type", type);
-    if (responseFormat) query.set("response_format", responseFormat);
-    const endpoint = `${baseUrl}/v1/tasks/${encodeURIComponent(taskId)}${query.toString() ? `?${query.toString()}` : ""}`;
-    const { payload } = await requestJson(endpoint, {
-      method: "GET",
-      headers: {
-        ...buildAuthHeaders(token),
-        ...(region ? { "X-Region": region } : {}),
-      },
-    });
-    normalized = payload;
-  }
+  const pick = await pickDirectTokenForTask(token, region);
+  const normalized: unknown = await getTaskResponse(
+    taskId,
+    pick.token,
+    buildRegionInfo(pick.region),
+    {
+      type: type === "image" || type === "video" ? type : undefined,
+      responseFormat: responseFormat === "b64_json" ? "b64_json" : "url",
+    }
+  );
   const taskInfo = collectTaskInfo(normalized);
   if (!taskInfo) {
     if (isJson) {
-      printCommandJson("task.get", unwrapBody(normalized), { transport });
+      printCommandJson("task.get", unwrapBody(normalized));
     } else {
       printJson(unwrapBody(normalized));
     }
     return;
   }
-  if (isJson) printCommandJson("task.get", taskInfo, { transport });
+  if (isJson) printCommandJson("task.get", taskInfo);
   else printTaskInfo(taskInfo);
 }
 
@@ -1917,9 +1586,7 @@ async function handleTaskWait(argv: string[]): Promise<void> {
       "response-format",
       "wait-timeout-seconds",
       "poll-interval-ms",
-      "base-url",
-      "transport",
-    ],
+      ],
     boolean: ["help", "json"],
   });
   if (args.help) {
@@ -1930,9 +1597,7 @@ async function handleTaskWait(argv: string[]): Promise<void> {
   if (!taskId) fail(`Missing required --task-id.\n\n${usageTaskWait()}`);
   const token = getSingleString(args, "token");
   const region = getRegionWithDefault(args);
-  const transport = parseTransportMode(args);
   const isJson = Boolean(args.json);
-  const baseUrl = sanitizeBaseUrl(getSingleString(args, "base-url"));
   const body: JsonRecord = {};
   const type = getSingleString(args, "type");
   const responseFormat = getSingleString(args, "response-format");
@@ -1940,44 +1605,29 @@ async function handleTaskWait(argv: string[]): Promise<void> {
   if (responseFormat) body.response_format = responseFormat;
   applyWaitOptionsToBody(body, args, false);
 
-  let normalized: unknown;
-  if (transport === "direct") {
-    const pick = await pickDirectTokenForTask(token, region);
-    normalized = await waitForTaskResponse(
-      taskId,
-      pick.token,
-      buildRegionInfo(pick.region),
-      {
-        type: type === "image" || type === "video" ? type : undefined,
-        responseFormat: responseFormat === "b64_json" ? "b64_json" : "url",
-        waitTimeoutSeconds: typeof body.wait_timeout_seconds === "number" ? body.wait_timeout_seconds : undefined,
-        pollIntervalMs: typeof body.poll_interval_ms === "number" ? body.poll_interval_ms : undefined,
-      }
-    );
-  } else {
-    const endpoint = `${baseUrl}/v1/tasks/${encodeURIComponent(taskId)}/wait`;
-    const { payload } = await requestJson(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...buildAuthHeaders(token),
-        ...(region ? { "X-Region": region } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-    normalized = payload;
-  }
+  const pick = await pickDirectTokenForTask(token, region);
+  const normalized: unknown = await waitForTaskResponse(
+    taskId,
+    pick.token,
+    buildRegionInfo(pick.region),
+    {
+      type: type === "image" || type === "video" ? type : undefined,
+      responseFormat: responseFormat === "b64_json" ? "b64_json" : "url",
+      waitTimeoutSeconds: typeof body.wait_timeout_seconds === "number" ? body.wait_timeout_seconds : undefined,
+      pollIntervalMs: typeof body.poll_interval_ms === "number" ? body.poll_interval_ms : undefined,
+    }
+  );
 
   const taskInfo = collectTaskInfo(normalized);
   if (!taskInfo) {
     if (isJson) {
-      printCommandJson("task.wait", unwrapBody(normalized), { transport });
+      printCommandJson("task.wait", unwrapBody(normalized));
     } else {
       printJson(unwrapBody(normalized));
     }
     return;
   }
-  if (isJson) printCommandJson("task.wait", taskInfo, { transport });
+  if (isJson) printCommandJson("task.wait", taskInfo);
   else printTaskInfo(taskInfo);
 }
 
@@ -2012,47 +1662,44 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
     name: "list",
     description: "List token pool entries",
     usageLine: "  jimeng token list [options]",
-    options: [JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
+    options: [JSON_OPTION, HELP_OPTION],
     handler: handleTokenList,
   },
   {
     name: "check",
-    description: "Validate tokens via /token/check",
+    description: "Validate tokens directly",
     usageLine: "  jimeng token check --token <token> [--token <token> ...] [options]",
     options: [
       "  --token <token>          Token, can be repeated",
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
       "  --region <region>        X-Region, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
-      BASE_URL_OPTION,
       HELP_OPTION,
     ],
     handler: handleTokenCheck,
   },
   {
     name: "points",
-    description: "Query token points (fallback to server token-pool)",
+    description: "Query token points directly",
     usageLine: "  jimeng token points [options]",
     options: [
       "  --token <token>          Token, can be repeated",
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
       "  --region <region>        Filter tokens by X-Region, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
-      BASE_URL_OPTION,
       HELP_OPTION,
     ],
     handler: async (argv) => handleTokenPointsOrReceive(argv, "points"),
   },
   {
     name: "receive",
-    description: "Receive token credits (fallback to server token-pool)",
+    description: "Receive token credits directly",
     usageLine: "  jimeng token receive [options]",
     options: [
       "  --token <token>          Token, can be repeated",
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
       "  --region <region>        Filter tokens by X-Region, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
-      BASE_URL_OPTION,
       HELP_OPTION,
     ],
     handler: async (argv) => handleTokenPointsOrReceive(argv, "receive"),
@@ -2066,8 +1713,6 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
       "  --region <region>        Region for add, default cn (cn/us/hk/jp/sg)",
       JSON_OPTION,
-      BASE_URL_OPTION,
-      TRANSPORT_OPTION,
       HELP_OPTION,
     ],
     handler: async (argv) => handleTokenAddOrRemove(argv, "add"),
@@ -2080,8 +1725,6 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
       "  --token <token>          Token, can be repeated",
       "  --token-file <path>      Read tokens from file (one per line, # for comments)",
       JSON_OPTION,
-      BASE_URL_OPTION,
-      TRANSPORT_OPTION,
       HELP_OPTION,
     ],
     handler: async (argv) => handleTokenAddOrRemove(argv, "remove"),
@@ -2090,35 +1733,35 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = [
     name: "enable",
     description: "Enable one token in token-pool",
     usageLine: "  jimeng token enable --token <token> [options]",
-    options: ["  --token <token>          Required, a single token", JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
+    options: ["  --token <token>          Required, a single token", JSON_OPTION, HELP_OPTION],
     handler: async (argv) => handleTokenEnableOrDisable(argv, "enable"),
   },
   {
     name: "disable",
     description: "Disable one token in token-pool",
     usageLine: "  jimeng token disable --token <token> [options]",
-    options: ["  --token <token>          Required, a single token", JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
+    options: ["  --token <token>          Required, a single token", JSON_OPTION, HELP_OPTION],
     handler: async (argv) => handleTokenEnableOrDisable(argv, "disable"),
   },
   {
     name: "pool",
     description: "Show token-pool summary and entries",
     usageLine: "  jimeng token pool [options]",
-    options: [JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
+    options: [JSON_OPTION, HELP_OPTION],
     handler: handleTokenPool,
   },
   {
     name: "pool-check",
     description: "Trigger token-pool health check",
     usageLine: "  jimeng token pool-check [options]",
-    options: [JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
+    options: [JSON_OPTION, HELP_OPTION],
     handler: async (argv) => handleTokenPoolCheckOrReload(argv, "pool-check"),
   },
   {
     name: "pool-reload",
     description: "Reload token-pool from disk",
     usageLine: "  jimeng token pool-reload [options]",
-    options: [JSON_OPTION, BASE_URL_OPTION, TRANSPORT_OPTION, HELP_OPTION],
+    options: [JSON_OPTION, HELP_OPTION],
     handler: async (argv) => handleTokenPoolCheckOrReload(argv, "pool-reload"),
   },
 ];
@@ -2149,14 +1792,6 @@ type CommandSpec = {
 };
 
 const COMMAND_SPECS: CommandSpec[] = [
-  {
-    name: "serve",
-    description: "Start jimeng-cli service",
-    handler: async () => {
-      const { startService } = await import("../lib/start-service.ts");
-      await startService();
-    },
-  },
   {
     name: "models",
     description: "Model commands",

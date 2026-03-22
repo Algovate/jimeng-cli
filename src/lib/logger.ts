@@ -46,11 +46,6 @@ class LogWriter {
         this.flush();
     }
 
-    // 兼容旧拼写
-    destory() {
-        this.destroy();
-    }
-
     scheduleNext() {
         this.#timer = setTimeout(this.work.bind(this), config.system.logWriteInterval);
         if (this.#timer && typeof this.#timer.unref === "function") this.#timer.unref();
@@ -196,11 +191,6 @@ class Logger {
 
     destroy() {
         this.#writer.destroy();
-    }
-
-    // 兼容旧拼写
-    destory() {
-        this.destroy();
     }
 
 }

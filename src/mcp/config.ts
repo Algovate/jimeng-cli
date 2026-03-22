@@ -13,7 +13,6 @@ function parseNumber(value: string | undefined, defaultValue: number): number {
 }
 
 export interface McpConfig {
-  apiBaseUrl: string;
   apiToken?: string;
   httpTimeoutMs: number;
   enableAdvancedTools: boolean;
@@ -21,11 +20,8 @@ export interface McpConfig {
 }
 
 export function loadMcpConfig(): McpConfig {
-  const apiBaseUrl = (process.env.JIMENG_API_BASE_URL || "http://127.0.0.1:5100").trim();
   const apiToken = process.env.JIMENG_API_TOKEN?.trim();
-
   return {
-    apiBaseUrl,
     apiToken: apiToken || undefined,
     httpTimeoutMs: parseNumber(process.env.MCP_HTTP_TIMEOUT_MS, 120000),
     enableAdvancedTools: parseBoolean(process.env.MCP_ENABLE_ADVANCED_TOOLS, true),
