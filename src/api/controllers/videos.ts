@@ -6,7 +6,7 @@ import APIException from "@/lib/exceptions/APIException.ts";
 
 import EX from "@/api/consts/exceptions.ts";
 import util from "@/lib/util.ts";
-import { getCredit, receiveCredit, request, getAssistantId, checkImageContent, RegionInfo } from "./core.ts";
+import { assertSafeExternalHttpUrl, getCredit, receiveCredit, request, getAssistantId, checkImageContent, RegionInfo } from "./core.ts";
 import logger from "@/lib/logger.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 import { AsyncTaskInfo, buildPendingTaskInfo, buildPollerOptions } from "./task-common.ts";
@@ -75,8 +75,11 @@ async function uploadImageFromFile(file: any, refreshToken: string, regionInfo: 
 async function uploadImageFromUrl(imageUrl: string, refreshToken: string, regionInfo: RegionInfo): Promise<ImageUploadResult> {
   try {
     logger.info(`开始从URL下载并上传视频图片: ${imageUrl}`);
+    await assertSafeExternalHttpUrl(imageUrl);
     const imageResponse = await axios.get(imageUrl, {
       responseType: 'arraybuffer',
+      maxContentLength: 100 * 1024 * 1024,
+      timeout: 60000,
       proxy: false,
     });
     if (imageResponse.status < 200 || imageResponse.status >= 300) {
@@ -88,6 +91,19 @@ async function uploadImageFromUrl(imageUrl: string, refreshToken: string, region
     logger.error(`从URL上传视频图片失败: ${error.message}`);
     throw error;
   }
+}
+
+function flattenUploadedFiles(files: any): any[] {
+  if (!files || typeof files !== "object") return [];
+  const flattened: any[] = [];
+  for (const value of Object.values(files)) {
+    if (Array.isArray(value)) {
+      for (const file of value) if (file) flattened.push(file);
+    } else if (value) {
+      flattened.push(value);
+    }
+  }
+  return flattened;
 }
 
 /**
@@ -340,12 +356,17 @@ export async function generateVideo(
 
     // 串行上传图片素材
     for (const fieldName of imageFields) {
-      const imageFile = files?.[fieldName];
+      const rawImageFile = files?.[fieldName];
+      const imageFile = Array.isArray(rawImageFile) ? rawImageFile[0] : rawImageFile;
       const imageUrlField = httpRequest?.body?.[fieldName];
 
       try {
         logger.info(`[omni] 上传 ${fieldName}`);
         let imgResult: ImageUploadResult;
+
+        if (Array.isArray(rawImageFile) && rawImageFile.length > 1) {
+          throw new APIException(EX.API_REQUEST_FAILED, `${fieldName} 不支持重复上传多个文件`);
+        }
 
         if (imageFile) {
           // 本地文件上传
@@ -423,12 +444,17 @@ export async function generateVideo(
 
     // 串行上传视频素材
     for (const fieldName of videoFields) {
-      const videoFile = files?.[fieldName];
+      const rawVideoFile = files?.[fieldName];
+      const videoFile = Array.isArray(rawVideoFile) ? rawVideoFile[0] : rawVideoFile;
       const videoUrlField = httpRequest?.body?.[fieldName];
 
       try {
         logger.info(`[omni] 上传 ${fieldName}`);
         let vResult: VideoUploadResult;
+
+        if (Array.isArray(rawVideoFile) && rawVideoFile.length > 1) {
+          throw new APIException(EX.API_REQUEST_FAILED, `${fieldName} 不支持重复上传多个文件`);
+        }
 
         if (videoFile) {
           // 本地文件上传
@@ -656,7 +682,7 @@ export async function generateVideo(
     let uploadIDs: string[] = [];
 
     // 优先处理本地上传的文件
-    const uploadedFiles = _.values(files);
+    const uploadedFiles = flattenUploadedFiles(files);
     if (uploadedFiles && uploadedFiles.length > 0) {
       logger.info(`检测到 ${uploadedFiles.length} 个本地上传文件，优先处理`);
       for (let i = 0; i < uploadedFiles.length; i++) {
@@ -864,7 +890,7 @@ export async function generateVideo(
 
   const historyId = aigc_data.history_record_id;
   if (!historyId)
-    throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
+    throw new APIException(EX.API_VIDEO_GENERATION_FAILED, "记录ID不存在");
 
   if (!wait) {
     logger.info(`视频生成任务已提交（异步模式），history_id: ${historyId}`);
@@ -971,7 +997,7 @@ export async function generateVideo(
   // 如果无法获取视频URL，抛出异常
   if (!fallbackVideoUrl) {
     logger.error(`未能获取视频URL，item_list: ${JSON.stringify(item_list)}`);
-    throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "未能获取视频URL，请稍后查看");
+    throw new APIException(EX.API_VIDEO_GENERATION_FAILED, "未能获取视频URL，请稍后查看");
   }
 
   logger.info(`视频生成成功，URL: ${fallbackVideoUrl}，总耗时: ${pollingResult.elapsedTime}秒`);

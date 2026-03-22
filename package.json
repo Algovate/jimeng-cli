@@ -51,12 +51,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/iptag/jimeng-cli.git"
+    "url": "https://github.com/Algovate/jimeng-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/iptag/jimeng-cli/issues"
+    "url": "https://github.com/Algovate/jimeng-cli/issues"
   },
-  "homepage": "https://github.com/iptag/jimeng-cli#readme",
+  "homepage": "https://github.com/Algovate/jimeng-cli",
   "dependencies": {
     "@koa/router": "^15.4.0",
     "@modelcontextprotocol/sdk": "^1.27.0",

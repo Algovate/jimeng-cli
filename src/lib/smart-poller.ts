@@ -127,17 +127,12 @@ export class SmartPoller {
       return { shouldExit: true, reason: `已获得完整结果集(${itemCount}/${this.options.expectedItemCount})` };
     }
     
-    // 4. 图片数量已稳定
-    if (this.stableItemCountRounds >= this.options.stableRounds && itemCount > 0) {
-      return { shouldExit: true, reason: `结果数量稳定(${this.stableItemCountRounds}轮)` };
-    }
-    
-    // 5. 轮询次数超限
+    // 4. 轮询次数超限
     if (this.pollCount >= this.options.maxPollCount) {
       return { shouldExit: true, reason: '轮询次数超限' };
     }
     
-    // 6. 时间超限但有结果
+    // 5. 时间超限但有结果
     if (elapsedTime >= this.options.timeoutSeconds && itemCount > 0) {
       return { shouldExit: true, reason: '时间超限但已有结果' };
     }

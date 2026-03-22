@@ -11,6 +11,12 @@ import {
 } from '@/api/routes/route-helpers.ts';
 import util from '@/lib/util.ts';
 
+function countUploadedFilesByFieldValue(value: unknown): number {
+    if (!value) return 0;
+    if (Array.isArray(value)) return value.filter(Boolean).length;
+    return 1;
+}
+
 export default {
 
     prefix: '/v1/videos',
@@ -98,8 +104,9 @@ export default {
 
                 // 统计上传的文件
                 for (const fieldName of Object.keys(uploadedFiles)) {
-                    if (fieldName.startsWith('image_file_')) imageCount++;
-                    else if (fieldName.startsWith('video_file_')) videoCount++;
+                    const count = countUploadedFilesByFieldValue((uploadedFiles as any)[fieldName]);
+                    if (fieldName === 'image_file' || fieldName.startsWith('image_file_')) imageCount += count;
+                    else if (fieldName === 'video_file' || fieldName.startsWith('video_file_')) videoCount += count;
                 }
 
                 // 统计URL字段
@@ -114,6 +121,12 @@ export default {
                     if (typeof request.body[fieldName] === 'string' && request.body[fieldName].startsWith('http')) {
                         videoCount++;
                     }
+                }
+                if (typeof request.body.image_file === 'string' && request.body.image_file.startsWith('http')) {
+                    imageCount++;
+                }
+                if (typeof request.body.video_file === 'string' && request.body.video_file.startsWith('http')) {
+                    videoCount++;
                 }
 
                 // 验证数量限制
@@ -136,8 +149,10 @@ export default {
                 }
             } else {
                 // 普通模式验证逻辑（保持原有逻辑）
-                const uploadedFiles = request.files ? _.values(request.files) : [];
-                if (uploadedFiles.length > 2) {
+                const uploadedFileCount: number = request.files
+                    ? Object.values(request.files as Record<string, unknown>).reduce<number>((sum, value) => sum + countUploadedFilesByFieldValue(value), 0)
+                    : 0;
+                if (uploadedFileCount > 2) {
                     throw new Error('最多只能上传2个图片文件');
                 }
             }

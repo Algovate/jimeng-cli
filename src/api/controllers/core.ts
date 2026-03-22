@@ -1,4 +1,6 @@
 import path from "path";
+import net from "node:net";
+import dns from "node:dns/promises";
 import _ from "lodash";
 import mime from "mime";
 import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
@@ -62,6 +64,75 @@ const FAKE_HEADERS = {
 };
 // 文件最大大小
 const FILE_MAX_SIZE = 100 * 1024 * 1024;
+
+function isPrivateOrLocalIp(address: string): boolean {
+  const normalized = address.toLowerCase().split("%")[0];
+  const ipVersion = net.isIP(normalized);
+  if (ipVersion === 4) {
+    const octets = normalized.split(".").map((part) => Number(part));
+    const [a, b] = octets;
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a === 0) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    return false;
+  }
+  if (ipVersion === 6) {
+    if (normalized === "::1" || normalized === "::") return true;
+    if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+    if (normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return true;
+    if (normalized.startsWith("::ffff:127.")) return true;
+    return false;
+  }
+  return false;
+}
+
+export async function assertSafeExternalHttpUrl(fileUrl: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(fileUrl);
+  } catch {
+    throw new APIException(EX.API_FILE_URL_INVALID, `File URL is invalid: ${fileUrl}`);
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new APIException(EX.API_FILE_URL_INVALID, `File URL protocol is not supported: ${parsed.protocol}`);
+  }
+
+  const hostname = parsed.hostname.trim().toLowerCase();
+  if (!hostname) {
+    throw new APIException(EX.API_FILE_URL_INVALID, "File URL hostname is empty");
+  }
+  if (hostname === "localhost" || hostname.endsWith(".local")) {
+    throw new APIException(EX.API_FILE_URL_INVALID, `File URL host is not allowed: ${hostname}`);
+  }
+
+  if (net.isIP(hostname)) {
+    if (isPrivateOrLocalIp(hostname)) {
+      throw new APIException(EX.API_FILE_URL_INVALID, `File URL host is not allowed: ${hostname}`);
+    }
+    return;
+  }
+
+  let records: Array<{ address: string; family: number }>;
+  try {
+    records = await dns.lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    throw new APIException(EX.API_FILE_URL_INVALID, `File URL hostname cannot be resolved: ${hostname}`);
+  }
+
+  if (!records.length) {
+    throw new APIException(EX.API_FILE_URL_INVALID, `File URL hostname cannot be resolved: ${hostname}`);
+  }
+
+  for (const record of records) {
+    if (isPrivateOrLocalIp(record.address)) {
+      throw new APIException(EX.API_FILE_URL_INVALID, `File URL host is not allowed: ${hostname}`);
+    }
+  }
+}
 
 /**
  * 获取缓存中的access_token
@@ -534,6 +605,7 @@ export async function checkImageContent(
   */
  export async function checkFileUrl(fileUrl: string) {
   if (util.isBASE64Data(fileUrl)) return;
+  await assertSafeExternalHttpUrl(fileUrl);
   const result = await axios.head(fileUrl, {
     timeout: 15000,
     validateStatus: () => true,

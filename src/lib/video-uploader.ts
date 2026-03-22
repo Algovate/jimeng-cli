@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import axios from "axios";
-import { RegionInfo, request } from "@/api/controllers/core.ts";
+import { assertSafeExternalHttpUrl, RegionInfo, request } from "@/api/controllers/core.ts";
 import { RegionUtils } from "@/lib/region-utils.ts";
 import { createSignature } from "@/lib/aws-signature.ts";
 import logger from "@/lib/logger.ts";
@@ -306,11 +306,13 @@ export async function uploadVideoFromUrl(
 ): Promise<VideoUploadResult> {
   try {
     logger.info(`开始从URL下载并上传视频: ${videoUrl}`);
+    await assertSafeExternalHttpUrl(videoUrl);
 
     const videoResponse = await axios.get(videoUrl, {
       responseType: 'arraybuffer',
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
+      maxContentLength: 100 * 1024 * 1024,
+      maxBodyLength: 100 * 1024 * 1024,
+      timeout: 60000,
     });
     if (videoResponse.status < 200 || videoResponse.status >= 300) {
       throw new Error(`下载视频失败: ${videoResponse.status}`);

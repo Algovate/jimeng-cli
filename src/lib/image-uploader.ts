@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import axios from "axios";
-import { RegionInfo, request } from "@/api/controllers/core.ts";
+import { assertSafeExternalHttpUrl, RegionInfo, request } from "@/api/controllers/core.ts";
 import { RegionUtils } from "@/lib/region-utils.ts";
 import { createSignature } from "@/lib/aws-signature.ts";
 import logger from "@/lib/logger.ts";
@@ -270,9 +270,12 @@ export async function uploadImageFromUrl(
 ): Promise<ImageUploadResult> {
   try {
     logger.info(`开始从URL下载并上传图片: ${imageUrl}`);
+    await assertSafeExternalHttpUrl(imageUrl);
 
     const imageResponse = await axios.get(imageUrl, {
       responseType: 'arraybuffer',
+      maxContentLength: 100 * 1024 * 1024,
+      timeout: 60000,
     });
     if (imageResponse.status < 200 || imageResponse.status >= 300) {
       throw new Error(`下载图片失败: ${imageResponse.status}`);
