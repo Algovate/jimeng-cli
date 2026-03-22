@@ -14,7 +14,7 @@ import {
   RegionCode,
   request,
 } from "@/api/controllers/core.ts";
-import tokenPool from "@/lib/session-pool.ts";
+import tokenPool, { type DynamicCapabilitiesRefreshResult } from "@/lib/session-pool.ts";
 
 type ModelItem = {
   id: string;
@@ -268,4 +268,8 @@ export async function getLiveModels(
 
     return { source: "fallback", data };
   }
+}
+
+export async function refreshAllTokenModels(): Promise<DynamicCapabilitiesRefreshResult[]> {
+  return tokenPool.refreshAllDynamicCapabilities();
 }

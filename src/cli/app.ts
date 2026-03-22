@@ -66,6 +66,22 @@ function usageModelsList(): string {
   ]);
 }
 
+function usageModelsRefresh(): string {
+  return buildUsageText("  jimeng models refresh [options]", [
+    "  --json                   Output structured JSON",
+    HELP_OPTION,
+  ], [
+    {
+      title: "Notes:",
+      lines: [
+        "  - Refreshes dynamicCapabilities (imageModels, videoModels, capabilityTags) for",
+        "    all enabled+live tokens in the token pool.",
+        "  - Results are persisted to token-pool.json automatically.",
+      ],
+    },
+  ]);
+}
+
 function usageTokenSubcommand(name: TokenSubcommandName): string {
   const subcommand = TOKEN_SUBCOMMANDS_BY_NAME[name];
   return buildUsageText(subcommand.usageLine, subcommand.options, subcommand.sections);
@@ -375,6 +391,7 @@ const TOKEN_SUBCOMMANDS: TokenSubcommandDef[] = createTokenSubcommands({
 
 const queryHandlers = createQueryCommandHandlers({
   usageModelsList,
+  usageModelsRefresh,
   usageTaskGet,
   usageTaskWait,
   getSingleString,
@@ -432,7 +449,10 @@ const COMMAND_SPECS: CommandSpec[] = [
   {
     name: "models",
     description: "Model commands",
-    subcommands: [{ name: "list", description: "List available models", handler: queryHandlers.handleModelsList }],
+    subcommands: [
+      { name: "list", description: "List available models", handler: queryHandlers.handleModelsList },
+      { name: "refresh", description: "Refresh token dynamic capabilities (model list)", handler: queryHandlers.handleModelsRefresh },
+    ],
     usage: usageRoot,
   },
   {

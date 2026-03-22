@@ -1,7 +1,7 @@
 import minimist from "minimist";
 
 import { buildRegionInfo, type RegionCode } from "@/api/controllers/core.ts";
-import { getLiveModels } from "@/api/controllers/models.ts";
+import { getLiveModels, refreshAllTokenModels } from "@/api/controllers/models.ts";
 import { getTaskResponse, waitForTaskResponse } from "@/api/controllers/tasks.ts";
 
 type JsonRecord = Record<string, unknown>;
@@ -17,6 +17,7 @@ type TaskInfo = {
 
 type QueryDeps = {
   usageModelsList: () => string;
+  usageModelsRefresh: () => string;
   usageTaskGet: () => string;
   usageTaskWait: () => string;
   getSingleString: (args: Record<string, unknown>, key: string) => string | undefined;
@@ -111,10 +112,45 @@ function printTaskInfo(task: TaskInfo, deps: Pick<QueryDeps, "printJson">): void
 
 export function createQueryCommandHandlers(deps: QueryDeps): {
   handleModelsList: (argv: string[]) => Promise<void>;
+  handleModelsRefresh: (argv: string[]) => Promise<void>;
   handleTaskGet: (argv: string[]) => Promise<void>;
   handleTaskWait: (argv: string[]) => Promise<void>;
   printTaskInfo: (task: unknown) => void;
 } {
+  const handleModelsRefresh = async (argv: string[]): Promise<void> => {
+    const args = minimist(argv, {
+      boolean: ["help", "json"],
+    });
+
+    if (args.help) {
+      console.log(deps.usageModelsRefresh());
+      return;
+    }
+
+    await deps.ensureTokenPoolReady();
+    const results = await refreshAllTokenModels();
+    const isJson = Boolean(args.json);
+
+    if (isJson) {
+      deps.printCommandJson("models.refresh", results);
+      return;
+    }
+
+    if (results.length === 0) {
+      console.log("No enabled+live tokens found in pool. Nothing to refresh.");
+      return;
+    }
+
+    console.log(`Refreshed ${results.length} token(s).`);
+    console.log("");
+    console.log("token\t\tregion\timageModels\tvideoModels\tcapabilityTags\terror");
+    for (const r of results) {
+      const tags = r.capabilityTags.length > 0 ? r.capabilityTags.join(",") : "-";
+      const err = r.error ? r.error.slice(0, 60) : "-";
+      console.log(`${r.token}\t${r.region}\t${r.imageModels}\t\t${r.videoModels}\t\t${tags}\t${err}`);
+    }
+  };
+
   const handleModelsList = async (argv: string[]): Promise<void> => {
     const args = minimist(argv, {
       string: ["region", "token"],
@@ -273,6 +309,7 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
 
   return {
     handleModelsList,
+    handleModelsRefresh,
     handleTaskGet,
     handleTaskWait,
     printTaskInfo: (task) => {

@@ -80,6 +80,15 @@ type AddTokenInput = {
 
 const DYNAMIC_CAPABILITY_TTL_MS = 30 * 60 * 1000;
 
+export interface DynamicCapabilitiesRefreshResult {
+  token: string;
+  region: string;
+  imageModels: number;
+  videoModels: number;
+  capabilityTags: string[];
+  error?: string;
+}
+
 class TokenPool {
   private readonly enabled: boolean;
   private readonly filePath: string;
@@ -357,6 +366,62 @@ class TokenPool {
 
   async reloadFromDisk(): Promise<void> {
     await this.loadFromDisk();
+  }
+
+  /**
+   * Refresh dynamic capabilities for a single pool token and persist to disk.
+   * Throws if the token is not found in pool or has no region.
+   */
+  async refreshDynamicCapabilitiesForToken(token: string): Promise<TokenDynamicCapabilities> {
+    if (!this.enabled) throw new Error("Token pool disabled");
+    const item = this.entryMap.get(token);
+    if (!item) throw new Error(`Token not found in pool: ${this.maskToken(token)}`);
+    if (!item.region) throw new Error(`Token ${this.maskToken(token)} has no region`);
+    const regionInfo = buildRegionInfo(item.region);
+    const capabilities = await this.fetchDynamicCapabilities(token, regionInfo);
+    item.dynamicCapabilities = { ...capabilities, updatedAt: Date.now() };
+    await this.persistToDisk();
+    return item.dynamicCapabilities;
+  }
+
+  /**
+   * Refresh dynamic capabilities for all enabled+live pool tokens.
+   * Returns a per-token result summary.
+   */
+  async refreshAllDynamicCapabilities(): Promise<DynamicCapabilitiesRefreshResult[]> {
+    if (!this.enabled) return [];
+    const entries = this.getEntries(false).filter(
+      (item) => item.enabled && item.live !== false && Boolean(item.region)
+    );
+    const results: DynamicCapabilitiesRefreshResult[] = [];
+    for (const entry of entries) {
+      try {
+        const regionInfo = buildRegionInfo(entry.region!);
+        const capabilities = await this.fetchDynamicCapabilities(entry.token, regionInfo);
+        const current = this.entryMap.get(entry.token);
+        if (current) {
+          current.dynamicCapabilities = { ...capabilities, updatedAt: Date.now() };
+        }
+        results.push({
+          token: this.maskToken(entry.token),
+          region: entry.region!,
+          imageModels: capabilities.imageModels?.length ?? 0,
+          videoModels: capabilities.videoModels?.length ?? 0,
+          capabilityTags: capabilities.capabilityTags ?? [],
+        });
+      } catch (err: any) {
+        results.push({
+          token: this.maskToken(entry.token),
+          region: entry.region!,
+          imageModels: 0,
+          videoModels: 0,
+          capabilityTags: [],
+          error: err?.message || String(err),
+        });
+      }
+    }
+    if (entries.length > 0) await this.persistToDisk();
+    return results;
   }
 
   async runHealthCheck(): Promise<{
