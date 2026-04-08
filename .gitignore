@@ -60,3 +60,6 @@ configs/session-pool.json
 configs/token-pool.json
 .ace-tool/
 pic/
+
+.chrome*/
+.cache/
