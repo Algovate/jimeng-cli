@@ -171,3 +171,110 @@ export async function waitForTaskResponse(
     data: await buildTaskData(finalType, taskData.task, responseFormat),
   };
 }
+
+export interface AssetListOptions {
+  count?: number;
+  type?: "image" | "video" | "all";
+  endTimeStamp?: number;
+  onlyFavorited?: boolean;
+}
+
+export interface AssetItem {
+  id: string;
+  type: number;
+  prompt: string;
+  modelReqKey: string;
+  modelName: string;
+  status: number;
+  createdTime: number;
+  finishTime: number;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface AssetListResult {
+  hasMore: boolean;
+  nextOffset: number;
+  items: AssetItem[];
+}
+
+/**
+ * 获取任务历史列表
+ */
+export async function getAssetList(
+  refreshToken: string,
+  regionInfo: RegionInfo,
+  options: AssetListOptions = {}
+): Promise<AssetListResult> {
+  const count = options.count || 20;
+  const typeFilter = options.type || "all";
+
+  // asset_type_list: 1=image, 2=video
+  let assetTypeList: number[];
+  if (typeFilter === "image") {
+    assetTypeList = [1];
+  } else if (typeFilter === "video") {
+    assetTypeList = [2];
+  } else {
+    assetTypeList = [1, 2, 5, 6, 7, 8, 9, 10];
+  }
+
+  const result = await request("post", "/mweb/v1/get_asset_list", refreshToken, regionInfo, {
+    data: {
+      count,
+      direction: 1,
+      mode: "workbench",
+      option: {
+        image_info: {
+          width: 480,
+          height: 480,
+          format: "webp",
+          image_scene_list: [
+            { scene: "loss", width: 480, height: 480, uniq_key: "480", format: "webp" },
+          ],
+        },
+        order_by: 0,
+        only_favorited: options.onlyFavorited || false,
+        end_time_stamp: options.endTimeStamp || 0,
+      },
+      asset_type_list: assetTypeList,
+      workspace_id: 0,
+    },
+  });
+
+  const hasMore = result?.has_more || false;
+  const nextOffset = result?.next_offset || 0;
+  const assetList = result?.asset_list || [];
+
+  const items: AssetItem[] = assetList.map((asset: any) => {
+    const image = asset?.image || {};
+    const itemList = image?.item_list || [];
+    const firstItem = itemList[0] || {};
+    const commonAttr = firstItem?.common_attr || {};
+    const imgData = firstItem?.image || {};
+    const largeImages = imgData?.large_images || [];
+    const aigcParams = firstItem?.aigc_image_params || {};
+    const text2imgParams = aigcParams?.text2image_params || {};
+    const modelConfig = text2imgParams?.model_config || {};
+    const task = image?.task || {};
+
+    return {
+      id: String(asset?.id || ""),
+      type: asset?.type || 1,
+      prompt: commonAttr?.description || commonAttr?.title || "",
+      modelReqKey: modelConfig?.model_req_key || "",
+      modelName: modelConfig?.model_name || "",
+      status: commonAttr?.status || task?.status || 0,
+      createdTime: image?.created_time || 0,
+      finishTime: task?.finish_time || 0,
+      imageUrl: largeImages[0]?.image_url || commonAttr?.cover_url || undefined,
+      thumbnailUrl: commonAttr?.cover_url || undefined,
+      width: largeImages[0]?.width || undefined,
+      height: largeImages[0]?.height || undefined,
+    };
+  });
+
+  return { hasMore, nextOffset, items };
+}

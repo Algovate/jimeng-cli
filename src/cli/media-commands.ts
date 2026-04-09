@@ -5,7 +5,7 @@ import path from "node:path";
 import minimist from "minimist";
 
 import { buildRegionInfo, type RegionCode } from "@/api/controllers/core.ts";
-import { generateImageComposition, generateImages } from "@/api/controllers/images.ts";
+import { generateImageComposition, generateImages, upscaleImage } from "@/api/controllers/images.ts";
 import { generateVideo } from "@/api/controllers/videos.ts";
 import {
   VIDEO_OMNI_IMAGE_SLOT_KEYS,
@@ -22,6 +22,7 @@ type JsonRecord = Record<string, unknown>;
 type MediaDeps = {
   usageImageGenerate: () => string;
   usageImageEdit: () => string;
+  usageImageUpscale: () => string;
   usageVideoGenerate: () => string;
   getSingleString: (args: Record<string, unknown>, key: string) => string | undefined;
   getRegionWithDefault: (args: Record<string, unknown>) => string;
@@ -192,6 +193,7 @@ async function downloadImages(
 export function createMediaCommandHandlers(deps: MediaDeps): {
   handleImageGenerate: (argv: string[]) => Promise<void>;
   handleImageEdit: (argv: string[]) => Promise<void>;
+  handleImageUpscale: (argv: string[]) => Promise<void>;
   handleVideoGenerate: (argv: string[]) => Promise<void>;
 } {
   const handleImageGenerate = async (argv: string[]): Promise<void> => {
@@ -498,9 +500,86 @@ export function createMediaCommandHandlers(deps: MediaDeps): {
     }
   };
 
+  const handleImageUpscale = async (argv: string[]): Promise<void> => {
+    const args = minimist(argv, {
+      string: [
+        "token",
+        "region",
+        "image",
+        "model",
+        "resolution",
+        "output-dir",
+        "wait-timeout-seconds",
+        "poll-interval-ms",
+      ],
+      boolean: ["help", "wait", "json"],
+      default: { wait: true },
+    });
+
+    if (args.help) {
+      console.log(deps.usageImageUpscale());
+      return;
+    }
+
+    const token = deps.getSingleString(args, "token");
+    const region = deps.getRegionWithDefault(args);
+    const imageSource = deps.getSingleString(args, "image");
+    if (!imageSource) deps.failWithUsage("Missing required --image.", deps.usageImageUpscale());
+
+    const outputDir = deps.getSingleString(args, "output-dir") || "./pic/cli-image-upscale";
+    const model = deps.getSingleString(args, "model") || "jimeng-5.0";
+    const resolution = deps.getSingleString(args, "resolution") || "4k";
+    const wait = Boolean(args.wait);
+    const isJson = Boolean(args.json);
+
+    const pick = await deps.pickDirectTokenForGeneration(token, region, model, "image");
+
+    let image: string | Buffer;
+    if (isHttpUrl(imageSource)) {
+      image = imageSource;
+    } else {
+      const imagePath = path.resolve(imageSource);
+      if (!(await pathExists(imagePath))) deps.fail(`Image file not found: ${imagePath}`);
+      image = await readFile(imagePath);
+    }
+
+    const result = await upscaleImage(
+      model,
+      image,
+      {
+        resolution,
+        wait,
+        waitTimeoutSeconds: parsePositiveNumberOption(args, "wait-timeout-seconds", deps),
+        pollIntervalMs: parsePositiveNumberOption(args, "poll-interval-ms", deps),
+      },
+      pick.token,
+      buildRegionInfo(pick.region)
+    );
+
+    if (!Array.isArray(result)) {
+      if (isJson) deps.printCommandJson("image.upscale", result, { wait });
+      else deps.printTaskInfo(result);
+      return;
+    }
+    const urls: string[] = result;
+    if (urls.length === 0) deps.fail("No image URL found in response.");
+
+    const savedFiles = await downloadImages(urls, outputDir, "jimeng-image-upscale", deps);
+    if (isJson) {
+      deps.printCommandJson(
+        "image.upscale",
+        { data: urls.map((url) => ({ url })), files: savedFiles },
+        { wait, resolution }
+      );
+    } else {
+      deps.printDownloadSummary("image", savedFiles);
+    }
+  };
+
   return {
     handleImageGenerate,
     handleImageEdit,
+    handleImageUpscale,
     handleVideoGenerate,
   };
 }

@@ -2,7 +2,6 @@ import path from 'path';
 
 import fs from 'fs-extra';
 import yaml from 'yaml';
-import _ from 'lodash';
 
 import environment from '../environment.ts';
 
@@ -34,12 +33,12 @@ export class SystemConfig {
 
     constructor(options?: any) {
         const { requestLog, tmpDir, logDir, logWriteInterval, logFileExpires, tmpFileExpires, requestBody, debug, log_level } = options || {};
-        this.requestLog = _.defaultTo(requestLog, false);
-        this.tmpDir = _.defaultTo(tmpDir, './tmp');
-        this.logDir = _.defaultTo(logDir, './logs');
-        this.logWriteInterval = _.defaultTo(logWriteInterval, 200);
-        this.logFileExpires = _.defaultTo(logFileExpires, 2626560000);
-        this.tmpFileExpires = _.defaultTo(tmpFileExpires, 86400000);
+        this.requestLog = requestLog ?? false;
+        this.tmpDir = tmpDir ?? './tmp';
+        this.logDir = logDir ?? './logs';
+        this.logWriteInterval = logWriteInterval ?? 200;
+        this.logFileExpires = logFileExpires ?? 2626560000;
+        this.tmpFileExpires = tmpFileExpires ?? 86400000;
         this.requestBody = Object.assign(requestBody || {}, {
             enableTypes: ['form', 'text', 'xml'],  // 移除 json，由自定义中间件处理
             encoding: 'utf-8',
@@ -53,8 +52,8 @@ export class SystemConfig {
             multipart: true,
             parsedMethods: ['POST', 'PUT', 'PATCH']
         });
-        this.debug = _.defaultTo(debug, true);
-        this.log_level = _.defaultTo(log_level, 'info');
+        this.debug = debug ?? true;
+        this.log_level = log_level ?? 'info';
     }
 
     get rootDirPath() {

@@ -3,9 +3,9 @@ import path from "node:path";
 
 import { DEFAULT_IMAGE_MODEL } from "@/api/consts/common.ts";
 import { buildRegionInfo, type RegionCode } from "@/api/controllers/core.ts";
-import { generateImageComposition, generateImages } from "@/api/controllers/images.ts";
+import { generateImageComposition, generateImages, upscaleImage } from "@/api/controllers/images.ts";
 import { getLiveModels } from "@/api/controllers/models.ts";
-import { getTaskResponse, waitForTaskResponse } from "@/api/controllers/tasks.ts";
+import { getTaskResponse, waitForTaskResponse, getAssetList } from "@/api/controllers/tasks.ts";
 import { DEFAULT_MODEL as DEFAULT_VIDEO_MODEL, generateVideo } from "@/api/controllers/videos.ts";
 import tokenPool from "@/lib/session-pool.ts";
 import util from "@/lib/util.ts";
@@ -290,5 +290,58 @@ export class JimengApiClient {
       },
       options
     );
+  }
+
+  async upscaleImage(body: Record<string, unknown>, options?: McpRequestOptions): Promise<any> {
+    const model = typeof body.model === "string" && body.model.trim().length > 0
+      ? body.model
+      : DEFAULT_IMAGE_MODEL;
+    const imageUrl = typeof body.image === "string" ? body.image : "";
+    if (!imageUrl) throw new Error("Missing required 'image' field (URL or base64)");
+
+    const tokenCtx = await this.pickModelToken(model, "image", options);
+
+    const responseFormat = body.response_format === "b64_json" ? "b64_json" : "url";
+    const upscaleResult = await upscaleImage(
+      model,
+      imageUrl,
+      {
+        resolution: body.resolution as string | undefined,
+        wait: body.wait as boolean | undefined,
+        waitTimeoutSeconds: body.wait_timeout_seconds as number | undefined,
+        pollIntervalMs: body.poll_interval_ms as number | undefined,
+      },
+      tokenCtx.token,
+      tokenCtx.regionInfo
+    );
+
+    if (!Array.isArray(upscaleResult)) {
+      return upscaleResult;
+    }
+
+    const data = responseFormat === "b64_json"
+      ? (await Promise.all(upscaleResult.map((url) => util.fetchFileBASE64(url)))).map((b64) => ({ b64_json: b64 }))
+      : upscaleResult.map((url) => ({ url }));
+
+    return {
+      created: util.unixTimestamp(),
+      data,
+      resolution: body.resolution || "4k",
+    };
+  }
+
+  async listTasks(options?: McpRequestOptions, query?: { type?: string; count?: number }): Promise<any> {
+    const tokenCtx = await this.pickTaskToken(options);
+    const result = await getAssetList(tokenCtx.token, tokenCtx.regionInfo, {
+      count: query?.count || 20,
+      type: (query?.type as "image" | "video" | "all") || "all",
+    });
+
+    return {
+      has_more: result.hasMore,
+      next_offset: result.nextOffset,
+      total: result.items.length,
+      items: result.items,
+    };
   }
 }

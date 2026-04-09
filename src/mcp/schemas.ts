@@ -143,3 +143,21 @@ export const waitTaskInputSchema = z.object({
   poll_interval_ms: z.number().int().positive().optional(),
   token: z.string().optional()
 });
+
+export const upscaleImageInputSchema = z.object({
+  image: z.string().min(1).describe("Image URL or local file path to upscale"),
+  model: z.string().optional(),
+  resolution: z.enum(["2k", "4k"]).optional(),
+  response_format: z.enum(["url", "b64_json"]).optional(),
+  wait: z.boolean().optional(),
+  wait_timeout_seconds: z.number().int().positive().optional(),
+  poll_interval_ms: z.number().int().positive().optional(),
+  token: z.string().optional(),
+  confirm: z.string().optional()
+});
+
+export const listTasksInputSchema = z.object({
+  type: z.enum(["image", "video", "all"]).optional(),
+  count: z.number().int().positive().max(100).optional(),
+  token: z.string().optional()
+});

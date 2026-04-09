@@ -19,20 +19,18 @@
     },
     "./package.json": "./package.json"
   },
-  "directories": {
-    "dist": "dist"
-  },
+
   "files": [
     "dist/"
   ],
   "scripts": {
-    "dev": "tsup src/index.ts src/cli/index.ts src/mcp/index.ts --format cjs,esm --sourcemap --dts --watch --onSuccess \"node --enable-source-maps --no-node-snapshot dist/index.js\"",
+    "dev": "tsup src/index.ts src/cli/index.ts src/mcp/index.ts --format cjs,esm --sourcemap --dts --watch",
     "start": "node --enable-source-maps --no-node-snapshot dist/index.js",
     "build": "tsup src/index.ts src/cli/index.ts src/mcp/index.ts --format cjs,esm --sourcemap --dts --clean",
     "mcp:dev": "tsup src/mcp/index.ts --format cjs,esm --sourcemap --dts --watch --onSuccess \"node --enable-source-maps --no-node-snapshot dist/mcp/index.js\"",
     "mcp:start": "node --enable-source-maps --no-node-snapshot dist/mcp/index.js",
     "mcp:smoke": "npm run build && node scripts/mcp-smoke.mjs",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run mcp:smoke && npm run cli:smoke",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "type-check": "tsc --noEmit",
     "token:check": "node --enable-source-maps --no-node-snapshot dist/cli/index.js token check",
@@ -56,30 +54,28 @@
     "url": "https://github.com/Algovate/jimeng-cli/issues"
   },
   "homepage": "https://github.com/Algovate/jimeng-cli",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.0",
     "axios": "^1.6.7",
-    "colors": "^1.4.0",
-    "crc-32": "^1.2.2",
-    "cron": "^3.1.6",
     "date-fns": "^3.3.1",
-    "eventsource-parser": "^1.1.2",
-    "form-data": "^4.0.0",
     "fs-extra": "^11.2.0",
     "https-proxy-agent": "^7.0.6",
-    "lodash": "^4.17.21",
     "mime": "^4.0.1",
     "minimist": "^1.2.8",
-    "randomstring": "^1.3.0",
-    "semver": "^7.7.2",
+    "picocolors": "^1.1.1",
     "socks-proxy-agent": "^8.0.5",
     "uuid": "^9.0.1",
     "yaml": "^2.3.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/lodash": "^4.14.202",
-    "@types/mime": "^3.0.4",
+    "@types/fs-extra": "^11.0.4",
+    "@types/minimist": "^1.2.5",
+    "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.7",
     "prettier": "^3.6.2",
     "tsup": "^8.0.2",
     "typescript": "^5.3.3"

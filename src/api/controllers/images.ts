@@ -1,4 +1,3 @@
-import _ from "lodash";
 
 import APIException from "@/lib/exceptions/APIException.ts";
 import EX from "@/api/consts/exceptions.ts";
@@ -7,7 +6,7 @@ import { getCredit, receiveCredit, request, getAssistantId, checkImageContent, R
 import logger from "@/lib/logger.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 import { AsyncTaskInfo, buildPendingTaskInfo, buildPollerOptions } from "./task-common.ts";
-import { DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODEL_US, IMAGE_MODEL_MAP, IMAGE_MODEL_MAP_US, IMAGE_MODEL_MAP_ASIA } from "@/api/consts/common.ts";
+import { DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODEL_US, IMAGE_MODEL_MAP, IMAGE_MODEL_MAP_US, IMAGE_MODEL_MAP_ASIA, DRAFT_VERSION, DRAFT_MIN_VERSION } from "@/api/consts/common.ts";
 import { uploadImageFromUrl, uploadImageBuffer } from "@/lib/image-uploader.ts";
 import { extractImageUrls } from "@/lib/image-utils.ts";
 import {
@@ -714,7 +713,212 @@ async function generateJimeng4xMultiImages(
 }
 
 
+/**
+ * 图片放大 (super_resolution)
+ */
+export async function upscaleImage(
+  _model: string,
+  image: string | Buffer,
+  {
+    resolution = '4k',
+    wait = true,
+    waitTimeoutSeconds,
+    pollIntervalMs,
+  }: {
+    resolution?: string;
+    wait?: boolean;
+    waitTimeoutSeconds?: number;
+    pollIntervalMs?: number;
+  },
+  refreshToken: string,
+  regionInfo: RegionInfo
+): Promise<string[] | AsyncTaskInfo> {
+  const { model, userModel } = getModel(_model, regionInfo);
+  logger.info(`使用模型: ${userModel} 映射模型: ${model} 图片放大 精细度: ${resolution}`);
+
+  // 获取积分
+  try {
+    const { totalCredit } = await getCredit(refreshToken, regionInfo);
+    if (totalCredit <= 0) {
+      logger.info("积分为 0，尝试收取今日积分...");
+      try {
+        await receiveCredit(refreshToken, regionInfo);
+      } catch (receiveError) {
+        logger.warn(`收取积分失败: ${receiveError.message}`);
+      }
+    }
+  } catch (e) {
+    logger.warn(`获取积分失败: ${e.message}`);
+  }
+
+  // 上传图片
+  let imageUri: string;
+  if (typeof image === 'string') {
+    logger.info(`正在上传图片 (URL)...`);
+    imageUri = (await uploadImageFromUrl(image, refreshToken, regionInfo)).uri;
+  } else {
+    logger.info(`正在上传图片 (Buffer)...`);
+    imageUri = (await uploadImageBuffer(image, refreshToken, regionInfo)).uri;
+  }
+  await checkImageContent(imageUri, refreshToken, regionInfo);
+  logger.info(`图片上传成功: ${imageUri}`);
+
+  // 解析目标分辨率
+  const resolutionResult = resolveResolution(userModel, regionInfo, resolution, '1:1');
+
+  const componentId = util.uuid();
+  const submitId = util.uuid();
+
+  // 构建 super_resolution 的 draft_content
+  const coreParam = {
+    type: "",
+    id: util.uuid(),
+    model,
+    prompt: "",
+    large_image_info: {
+      type: "",
+      id: util.uuid(),
+      min_version: DRAFT_MIN_VERSION,
+      height: resolutionResult.height,
+      width: resolutionResult.width,
+      resolution_type: resolutionResult.resolutionType,
+    },
+    generate_type: 2, // DAAIGCGenerateType.superResolution
+  };
+
+  const posteditParam = {
+    type: "",
+    id: util.uuid(),
+    generate_type: 2, // DAAIGCGenerateType.superResolution
+    item_id: imageUri,
+  };
+
+  const draftContent = JSON.stringify({
+    type: "draft",
+    id: util.uuid(),
+    min_version: DRAFT_MIN_VERSION,
+    min_features: [],
+    is_from_tsn: true,
+    version: DRAFT_VERSION,
+    main_component_id: componentId,
+    component_list: [
+      {
+        type: "image_base_component",
+        id: componentId,
+        min_version: DRAFT_MIN_VERSION,
+        gen_type: 2, // DAAIGCGenerateType.superResolution
+        generate_type: "super_resolution",
+        aigc_mode: "workbench",
+        abilities: {
+          type: "",
+          id: util.uuid(),
+          super_resolution: {
+            type: "",
+            id: util.uuid(),
+            core_param: coreParam,
+            postedit_param: posteditParam,
+          },
+        },
+      },
+    ],
+  });
+
+  const metricsExtra = buildMetricsExtra({
+    userModel,
+    model,
+    regionInfo,
+    submitId,
+    scene: "ImageBasicGenerate",
+    resolutionType: resolutionResult.resolutionType,
+    abilityList: [],
+  });
+
+  const requestData = buildGenerateRequest({
+    model,
+    regionInfo,
+    submitId,
+    draftContent,
+    metricsExtra,
+  });
+
+  const imageReferer = regionInfo.isCN
+    ? "https://jimeng.jianying.com/ai-tool/generate?type=image"
+    : "https://dreamina.capcut.com/ai-tool/generate?type=image";
+
+  const { aigc_data } = await request(
+    "post",
+    "/mweb/v1/aigc_draft/generate",
+    refreshToken,
+    regionInfo,
+    { data: requestData, headers: { Referer: imageReferer } }
+  );
+
+  const historyId = aigc_data?.history_record_id;
+  if (!historyId)
+    throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
+
+  if (!wait) {
+    logger.info(`图片放大任务已提交（异步模式），history_id: ${historyId}`);
+    return buildPendingTaskInfo(historyId, "image");
+  }
+
+  logger.info(`图片放大任务已提交，history_id: ${historyId}，等待完成...`);
+
+  const pollerOptions = buildPollerOptions(waitTimeoutSeconds, pollIntervalMs, 1800, 10000, 900);
+  const poller = new SmartPoller({
+    maxPollCount: pollerOptions.maxPollCount,
+    pollInterval: pollerOptions.pollInterval,
+    expectedItemCount: 1,
+    type: 'image',
+    timeoutSeconds: pollerOptions.timeoutSeconds
+  });
+
+  const { result: pollingResult, data: finalTaskInfo } = await poller.poll(async () => {
+    const response = await request("post", "/mweb/v1/get_history_by_ids", refreshToken, regionInfo, {
+      data: {
+        history_ids: [historyId],
+        image_info: {
+          width: 2048,
+          height: 2048,
+          format: "webp",
+          image_scene_list: [
+            { scene: "normal", width: 2400, height: 2400, uniq_key: "2400", format: "webp" },
+            { scene: "normal", width: 1080, height: 1080, uniq_key: "1080", format: "webp" },
+          ],
+        }
+      }
+    });
+
+    if (!response[historyId])
+      throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录不存在");
+
+    const taskInfo = response[historyId];
+    return {
+      status: {
+        status: taskInfo.status,
+        failCode: taskInfo.fail_code,
+        itemCount: (taskInfo.item_list || []).length,
+        finishTime: taskInfo.task?.finish_time || 0,
+        historyId
+      } as PollingStatus,
+      data: taskInfo
+    };
+  }, historyId);
+
+  const item_list = finalTaskInfo.item_list || [];
+  const resultImageUrls = extractImageUrls(item_list);
+
+  if (resultImageUrls.length === 0 && item_list.length > 0) {
+    throw new APIException(EX.API_IMAGE_GENERATION_FAILED, `图片放大失败: item_list有 ${item_list.length} 个项目，但无法提取任何图片URL`);
+  }
+
+  logger.info(`图片放大完成: 成功生成 ${resultImageUrls.length} 张图片，总耗时 ${pollingResult.elapsedTime} 秒`);
+
+  return resultImageUrls;
+}
+
 export default {
   generateImages,
   generateImageComposition,
+  upscaleImage,
 };

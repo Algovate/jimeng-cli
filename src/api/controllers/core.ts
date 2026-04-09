@@ -1,7 +1,7 @@
 import path from "path";
 import net from "node:net";
 import dns from "node:dns/promises";
-import _ from "lodash";
+
 import mime from "mime";
 import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
 import { HttpsProxyAgent } from "https-proxy-agent";
@@ -163,7 +163,7 @@ export interface RegionInfo {
 const REGION_PREFIX_PATTERN = /^(us|hk|jp|sg)-/i;
 
 export function parseRegionCode(value: unknown): RegionCode | null {
-  if (!_.isString(value)) return null;
+  if (typeof value !== "string") return null;
   const normalized = value.trim().toLowerCase();
   if (normalized === "cn" || normalized === "us" || normalized === "hk" || normalized === "jp" || normalized === "sg") {
     return normalized as RegionCode;
@@ -462,6 +462,7 @@ export async function request(
         await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.RETRY_DELAY));
       }
 
+      const { params: _p, headers: _h, noDefaultParams: _n, ...restOptions } = options;
       const response = await axios.request({
         method,
         url: fullUrl,
@@ -469,7 +470,7 @@ export async function request(
         headers: headers,
         timeout: 45000, // 增加超时时间到45秒
         validateStatus: () => true, // 允许任何状态码
-        ..._.omit(options, "params", "headers"),
+        ...restOptions,
         ...(proxyAgent ? { httpAgent: proxyAgent, httpsAgent: proxyAgent, proxy: false } : {}),
       });
 
@@ -753,7 +754,7 @@ export async function uploadFile(
  */
 export function checkResult(result: AxiosResponse) {
   const { ret, errmsg, data } = result.data;
-  if (!_.isFinite(Number(ret))) return result.data;
+  if (!Number.isFinite(Number(ret))) return result.data;
   if (ret === '0') return data;
 
   // 使用统一错误处理器

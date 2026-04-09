@@ -14,6 +14,7 @@ import {
 } from "@/cli/token-commands.ts";
 import { createQueryCommandHandlers } from "@/cli/query-commands.ts";
 import { createMediaCommandHandlers } from "@/cli/media-commands.ts";
+import { createLoginCommandHandler } from "@/cli/login.ts";
 
 type JsonRecord = Record<string, unknown>;
 type CliHandler = (argv: string[]) => Promise<void>;
@@ -152,6 +153,35 @@ function usageImageEdit(): string {
   );
 }
 
+function usageImageUpscale(): string {
+  return buildUsageText(
+    "  jimeng image upscale --image <path_or_url> [options]",
+    [
+    "  --token <token>          Optional, override token-pool selection",
+    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
+    "  --image <path_or_url>    Required, local file or URL",
+    "  --model <model>          Default jimeng-5.0",
+    "  --resolution <res>       Default 4k (target resolution)",
+    "  --wait / --no-wait       Default wait; --no-wait returns task only",
+    "  --wait-timeout-seconds   Optional wait timeout override",
+    "  --poll-interval-ms       Optional poll interval override",
+    JSON_OPTION,
+    "  --output-dir <dir>       Default ./pic/cli-image-upscale",
+    HELP_OPTION,
+    ],
+    [
+      {
+        title: "Notes:",
+        lines: [
+          "  - Upscales an existing image to higher resolution using super_resolution.",
+          "  - Supports 2k and 4k target resolutions.",
+          "  - Image source can be a local file path or HTTP URL.",
+        ],
+      },
+    ]
+  );
+}
+
 function usageVideoGenerate(): string {
   return buildUsageText("  jimeng video generate --prompt <text> [options]", [
     "  --token <token>          Optional, override token-pool selection",
@@ -219,6 +249,17 @@ function usageTaskWait(): string {
     "  --response-format <fmt>  Optional url or b64_json",
     "  --wait-timeout-seconds   Optional wait timeout override",
     "  --poll-interval-ms       Optional poll interval override",
+    JSON_OPTION,
+    HELP_OPTION,
+  ]);
+}
+
+function usageTaskList(): string {
+  return buildUsageText("  jimeng task list [options]", [
+    "  --token <token>          Optional, override token-pool selection",
+    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
+    "  --type <type>            Filter by type: image, video, or all (default all)",
+    "  --count <num>            Number of items per page (default 20)",
     JSON_OPTION,
     HELP_OPTION,
   ]);
@@ -394,6 +435,7 @@ const queryHandlers = createQueryCommandHandlers({
   usageModelsRefresh,
   usageTaskGet,
   usageTaskWait,
+  usageTaskList,
   getSingleString,
   getRegionWithDefault,
   parseRegionOrFail,
@@ -408,6 +450,7 @@ const queryHandlers = createQueryCommandHandlers({
 const mediaHandlers = createMediaCommandHandlers({
   usageImageGenerate,
   usageImageEdit,
+  usageImageUpscale,
   usageVideoGenerate,
   getSingleString,
   getRegionWithDefault,
@@ -447,6 +490,19 @@ type CommandSpec = {
 
 const COMMAND_SPECS: CommandSpec[] = [
   {
+    name: "login",
+    description: "Login and add session to token pool",
+    handler: createLoginCommandHandler({
+      getSingleString,
+      getRegionWithDefault,
+      parseRegionOrFail,
+      ensureTokenPoolReady,
+      fail,
+      printJson,
+      printCommandJson,
+    }),
+  },
+  {
     name: "models",
     description: "Model commands",
     subcommands: [
@@ -461,6 +517,7 @@ const COMMAND_SPECS: CommandSpec[] = [
     subcommands: [
       { name: "generate", description: "Generate image from text", handler: mediaHandlers.handleImageGenerate },
       { name: "edit", description: "Edit image(s) with prompt", handler: mediaHandlers.handleImageEdit },
+      { name: "upscale", description: "Upscale image to higher resolution", handler: mediaHandlers.handleImageUpscale },
     ],
     usage: usageRoot,
   },
@@ -482,6 +539,7 @@ const COMMAND_SPECS: CommandSpec[] = [
     subcommands: [
       { name: "get", description: "Get task status", handler: queryHandlers.handleTaskGet },
       { name: "wait", description: "Wait until task completion", handler: queryHandlers.handleTaskWait },
+      { name: "list", description: "List task history", handler: queryHandlers.handleTaskList },
     ],
     usage: usageRoot,
   },
@@ -558,7 +616,7 @@ async function run(): Promise<void> {
   }
 
   if (spec.handler) {
-    await spec.handler(rest);
+    await spec.handler(subcommand ? [subcommand, ...rest] : rest);
     return;
   }
 

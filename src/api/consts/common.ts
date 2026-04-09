@@ -52,6 +52,9 @@ export const IMAGE_MODEL_MAP = {
   "jimeng-4.0": "high_aes_general_v40",
   "jimeng-3.1": "high_aes_general_v30l_art_fangzhou:general_v3.0_18b",
   "jimeng-3.0": "high_aes_general_v30l:general_v3.0_18b",
+  "jimeng-3.0fast": "high_aes_general_v30l:general_v3.0_18b_fast",
+  "jimeng-3.0pro": "high_aes_general_v30l:general_v3.0_18b_pro",
+  "jimeng-lab": "high_aes_general_v50_lab",
 };
 
 export const IMAGE_MODEL_MAP_US = {
@@ -79,6 +82,8 @@ export const IMAGE_MODEL_MAP_ASIA = {
 export const VIDEO_MODEL_MAP = {
   "jimeng-video-seedance-2.0": "dreamina_seedance_40_pro",
   "jimeng-video-seedance-2.0-fast": "dreamina_seedance_40",
+  "jimeng-video-seedance-2.0-vip": "dreamina_seedance_40_pro_vip",
+  "jimeng-video-seedance-2.0-fast-vip": "dreamina_seedance_40_vip",
   "jimeng-video-3.5-pro": "dreamina_ic_generate_video_model_vgfm_3.5_pro",
   "jimeng-video-3.0-pro": "dreamina_ic_generate_video_model_vgfm_3.0_pro",
   "jimeng-video-3.0": "dreamina_ic_generate_video_model_vgfm_3.0",

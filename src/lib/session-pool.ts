@@ -1,6 +1,10 @@
 import path from "path";
 import fs from "fs-extra";
-import _ from "lodash";
+
+/** Pick a random element from an array. */
+function sample<T>(arr: T[]): T | undefined {
+  return arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : undefined;
+}
 
 import logger from "@/lib/logger.ts";
 import {
@@ -188,7 +192,7 @@ class TokenPool {
   }
 
   pickTokenFromAuthorizationDetailed(authorization?: string): AuthorizationTokenPickResult {
-    if (_.isString(authorization)) {
+    if (typeof authorization === "string") {
       if (authorization.trim().length === 0) return { token: this.pickToken(), error: null };
       if (!/^Bearer\s+/i.test(authorization)) {
         return { token: null, error: "invalid_authorization_format" };
@@ -201,7 +205,7 @@ class TokenPool {
       if (tokens.length === 0) {
         return { token: null, error: "empty_authorization_tokens" };
       }
-      return { token: _.sample(tokens) || null, error: null };
+      return { token: sample(tokens) || null, error: null };
     }
     return { token: this.pickToken(), error: null };
   }
@@ -215,7 +219,7 @@ class TokenPool {
       this.roundRobinCursor++;
       return token;
     }
-    return _.sample(tokens) || null;
+    return sample(tokens) || null;
   }
 
   pickTokenForRequest({
@@ -232,7 +236,7 @@ class TokenPool {
     xRegion?: string;
   }): RequestTokenPickResult {
     const xRegionCode = parseRegionCode(xRegion);
-    if (_.isString(xRegion) && xRegion.trim().length > 0 && !xRegionCode) {
+    if (typeof xRegion === "string" && xRegion.trim().length > 0 && !xRegionCode) {
       return { token: null, region: null, error: "unsupported_region", reason: "X-Region 仅支持 cn/us/hk/jp/sg" };
     }
 
@@ -537,10 +541,10 @@ class TokenPool {
         token,
         region: parsedRegion || undefined,
         enabled: raw.enabled !== false,
-        live: _.isBoolean(raw.live) ? raw.live : undefined,
-        lastCheckedAt: _.isFinite(Number(raw.lastCheckedAt)) ? Number(raw.lastCheckedAt) : undefined,
-        lastError: _.isString(raw.lastError) ? raw.lastError : undefined,
-        lastCredit: _.isFinite(Number(raw.lastCredit)) ? Number(raw.lastCredit) : undefined,
+        live: typeof raw.live === "boolean" ? raw.live : undefined,
+        lastCheckedAt: Number.isFinite(Number(raw.lastCheckedAt)) ? Number(raw.lastCheckedAt) : undefined,
+        lastError: typeof raw.lastError === "string" ? raw.lastError : undefined,
+        lastCredit: Number.isFinite(Number(raw.lastCredit)) ? Number(raw.lastCredit) : undefined,
         consecutiveFailures: Math.max(0, Number(raw.consecutiveFailures) || 0),
         allowedModels: this.normalizeStringArray(raw.allowedModels),
         capabilityTags: this.normalizeStringArray(raw.capabilityTags),
@@ -566,7 +570,7 @@ class TokenPool {
   }
 
   private parseAuthorizationTokens(authorization?: string): { tokens: string[]; error: AuthorizationTokenError | null } {
-    if (!_.isString(authorization) || authorization.trim().length === 0) {
+    if (typeof authorization !== "string" || authorization.trim().length === 0) {
       return { tokens: [], error: null };
     }
     if (!/^Bearer\s+/i.test(authorization)) {
@@ -584,7 +588,7 @@ class TokenPool {
   private normalizeAddTokens(rawTokens: Array<string | AddTokenInput>, defaultRegion?: RegionCode): AddTokenInput[] {
     const normalized: AddTokenInput[] = [];
     for (const item of rawTokens) {
-      if (_.isString(item)) {
+      if (typeof item === "string") {
         const token = item.trim();
         if (!token) continue;
         if (!defaultRegion) {
@@ -626,7 +630,7 @@ class TokenPool {
       imageModels: this.normalizeStringArray(data.imageModels),
       videoModels: this.normalizeStringArray(data.videoModels),
       capabilityTags: this.normalizeStringArray(data.capabilityTags),
-      updatedAt: _.isFinite(Number(data.updatedAt)) ? Number(data.updatedAt) : undefined,
+      updatedAt: Number.isFinite(Number(data.updatedAt)) ? Number(data.updatedAt) : undefined,
     };
     if (!dynamic.imageModels && !dynamic.videoModels && !dynamic.capabilityTags && !dynamic.updatedAt) {
       return undefined;
@@ -678,7 +682,7 @@ class TokenPool {
       this.roundRobinCursor++;
       return item;
     }
-    return _.sample(candidates) || candidates[0];
+    return sample(candidates) || candidates[0];
   }
 
   private matchesModelAndCapabilities(

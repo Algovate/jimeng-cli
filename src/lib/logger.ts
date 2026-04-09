@@ -1,13 +1,23 @@
 import path from 'path';
 import _util from 'util';
 
-import 'colors';
+import pc from 'picocolors';
 import _ from 'lodash';
 import fs from 'fs-extra';
 import { format as dateFormat } from 'date-fns';
 
 import config from './config.ts';
 import util from './util.ts';
+
+/** Maps level color names to picocolors formatter functions */
+const colorFns: Record<string, (s: string) => string> = {
+    green: pc.green,
+    brightCyan: pc.cyan,
+    white: pc.white,
+    brightYellow: pc.yellow,
+    brightRed: pc.red,
+    red: pc.red,
+};
 
 const isVercelEnv = process.env.VERCEL;
 const isCliSilentLogs = () => process.env.JIMENG_CLI_SILENT_LOGS === "true";
@@ -159,7 +169,8 @@ class Logger {
         if (options.requireDebug && !config.system.debug) return;
         if (!this.#checkLevel(level)) return;
         const content = new LogText(level, ...params).toString();
-        consoleMethod(content[Logger.LevelColor[level]]);
+        const colorFn = colorFns[Logger.LevelColor[level]] || ((s: string) => s);
+        consoleMethod(colorFn(content));
         this.#writer.push(options.trailingNewline === false ? content : content + "\n");
     }
 

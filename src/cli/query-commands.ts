@@ -2,7 +2,7 @@ import minimist from "minimist";
 
 import { buildRegionInfo, type RegionCode } from "@/api/controllers/core.ts";
 import { getLiveModels, refreshAllTokenModels } from "@/api/controllers/models.ts";
-import { getTaskResponse, waitForTaskResponse } from "@/api/controllers/tasks.ts";
+import { getTaskResponse, waitForTaskResponse, getAssetList, AssetListOptions } from "@/api/controllers/tasks.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -20,6 +20,7 @@ type QueryDeps = {
   usageModelsRefresh: () => string;
   usageTaskGet: () => string;
   usageTaskWait: () => string;
+  usageTaskList: () => string;
   getSingleString: (args: Record<string, unknown>, key: string) => string | undefined;
   getRegionWithDefault: (args: Record<string, unknown>) => string;
   parseRegionOrFail: (region: string | undefined) => RegionCode | undefined;
@@ -115,6 +116,7 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
   handleModelsRefresh: (argv: string[]) => Promise<void>;
   handleTaskGet: (argv: string[]) => Promise<void>;
   handleTaskWait: (argv: string[]) => Promise<void>;
+  handleTaskList: (argv: string[]) => Promise<void>;
   printTaskInfo: (task: unknown) => void;
 } {
   const handleModelsRefresh = async (argv: string[]): Promise<void> => {
@@ -307,11 +309,70 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
     else printTaskInfo(taskInfo, deps);
   };
 
+  const handleTaskList = async (argv: string[]): Promise<void> => {
+    const args = minimist(argv, {
+      string: ["token", "region", "type", "count"],
+      boolean: ["help", "json"],
+    });
+
+    if (args.help) {
+      console.log(deps.usageTaskList());
+      return;
+    }
+
+    const token = deps.getSingleString(args, "token");
+    const region = deps.getRegionWithDefault(args);
+    const type = deps.getSingleString(args, "type");
+    const countRaw = deps.getSingleString(args, "count");
+    const count = countRaw ? Number(countRaw) : 20;
+    const isJson = Boolean(args.json);
+
+    if (type && type !== "image" && type !== "video" && type !== "all") {
+      deps.fail(`Invalid --type: ${type}. Use image, video, or all.`);
+    }
+
+    const pick = await deps.pickDirectTokenForTask(token, region);
+    const result = await getAssetList(
+      pick.token,
+      buildRegionInfo(pick.region),
+      {
+        count: Number.isFinite(count) && count > 0 ? count : 20,
+        type: type as AssetListOptions["type"],
+      }
+    );
+
+    if (isJson) {
+      deps.printCommandJson("task.list", {
+        has_more: result.hasMore,
+        next_offset: result.nextOffset,
+        total: result.items.length,
+        items: result.items,
+      });
+      return;
+    }
+
+    console.log(`Total: ${result.items.length} items${result.hasMore ? " (more available)" : ""}\n`);
+    for (const item of result.items) {
+      const typeLabel = item.type === 1 ? "IMG" : "VID";
+      const statusLabel = item.status === 144 || item.status === 10 ? "DONE" : item.status === 30 ? "FAIL" : "PROC";
+      const time = item.createdTime > 0
+        ? new Date(item.createdTime * 1000).toLocaleString()
+        : "-";
+      const modelShort = item.modelName || item.modelReqKey || "-";
+      const promptShort = item.prompt.length > 50 ? item.prompt.slice(0, 50) + "..." : item.prompt;
+      console.log(`${item.id}  ${typeLabel}  ${statusLabel.padEnd(4)}  ${time}  ${modelShort.padEnd(20)}  ${promptShort}`);
+      if (item.imageUrl) {
+        console.log(`         ${item.imageUrl}`);
+      }
+    }
+  };
+
   return {
     handleModelsList,
     handleModelsRefresh,
     handleTaskGet,
     handleTaskWait,
+    handleTaskList,
     printTaskInfo: (task) => {
       const normalized = collectTaskInfo(task, deps);
       if (!normalized) {
