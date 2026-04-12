@@ -15,16 +15,11 @@ import {
   getTokenLiveStatus,
   parseRegionCode,
   RegionCode,
-  request,
 } from "@/api/controllers/core.ts";
 import {
-  IMAGE_MODEL_MAP,
-  IMAGE_MODEL_MAP_ASIA,
-  IMAGE_MODEL_MAP_US,
-  VIDEO_MODEL_MAP,
-  VIDEO_MODEL_MAP_ASIA,
-  VIDEO_MODEL_MAP_US,
-} from "@/api/consts/common.ts";
+  buildReverseMap,
+  fetchConfigModelReqKeys,
+} from "@/api/controllers/models.ts";
 
 export interface TokenDynamicCapabilities {
   imageModels?: string[];
@@ -107,6 +102,7 @@ class TokenPool {
   private initialized = false;
   private healthChecking = false;
   private lastHealthCheckAt = 0;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private healthCheckTimer: NodeJS.Timeout | null = null;
   private roundRobinCursor = 0;
 
@@ -144,10 +140,14 @@ class TokenPool {
   }
 
   getSummary() {
-    const entries = this.getEntries(false);
-    const enabledCount = entries.filter((item) => item.enabled).length;
-    const liveCount = entries.filter((item) => item.enabled && item.live === true).length;
-    const missingRegionCount = entries.filter((item) => !item.region).length;
+    let enabledCount = 0;
+    let liveCount = 0;
+    let missingRegionCount = 0;
+    for (const item of this.entryMap.values()) {
+      if (item.enabled) enabledCount++;
+      if (item.enabled && item.live === true) liveCount++;
+      if (!item.region) missingRegionCount++;
+    }
     return {
       enabled: this.enabled,
       filePath: this.filePath,
@@ -156,7 +156,7 @@ class TokenPool {
       fetchCreditOnCheck: this.fetchCreditOnCheck,
       autoDisableEnabled: this.autoDisableEnabled,
       autoDisableFailures: this.autoDisableFailures,
-      total: entries.length,
+      total: this.entryMap.size,
       enabledCount,
       liveCount,
       missingRegionCount,
@@ -165,7 +165,7 @@ class TokenPool {
   }
 
   getEntries(shouldMask = true): TokenPoolEntry[] {
-    const items = Array.from(this.entryMap.values()).map((item) => ({ ...item }));
+    const items = Array.from(this.entryMap.values());
     if (!shouldMask) return items;
     return items.map((item) => ({
       ...item,
@@ -175,12 +175,13 @@ class TokenPool {
 
   getAllTokens(options: { onlyEnabled?: boolean; preferLive?: boolean } = {}): string[] {
     const { onlyEnabled = true, preferLive = true } = options;
-    const entries = this.getEntries(false).filter((item) => {
-      if (onlyEnabled && !item.enabled) return false;
-      if (preferLive && item.live === false) return false;
-      return true;
-    });
-    return entries.map((item) => item.token);
+    const tokens: string[] = [];
+    for (const item of this.entryMap.values()) {
+      if (onlyEnabled && !item.enabled) continue;
+      if (preferLive && item.live === false) continue;
+      tokens.push(item.token);
+    }
+    return tokens;
   }
 
   getTokenEntry(token: string): TokenPoolEntry | null {
@@ -249,7 +250,7 @@ class TokenPool {
     const authTokens = authParseResult.tokens;
     const candidates = authTokens.length > 0
       ? authTokens.map((token) => this.buildCandidateFromAuthToken(token, xRegionCode))
-      : this.getEntries(false).map((entry) => this.buildCandidateFromPoolEntry(entry));
+      : Array.from(this.entryMap.values()).map((entry) => this.buildCandidateFromPoolEntry(entry));
 
     const validCandidates = candidates.filter((item): item is CandidateToken => Boolean(item));
     if (validCandidates.length === 0) {
@@ -317,7 +318,7 @@ class TokenPool {
       added++;
     }
     if (added > 0) {
-      await this.persistToDisk();
+      await this.persistToDiskNow();
       logger.info(`Token pool add tokens: added=${added}, total=${this.entryMap.size}`);
     }
     return { added, total: this.entryMap.size };
@@ -331,7 +332,7 @@ class TokenPool {
       if (this.entryMap.delete(token)) removed++;
     }
     if (removed > 0) {
-      await this.persistToDisk();
+      await this.persistToDiskNow();
       logger.info(`Token pool remove tokens: removed=${removed}, total=${this.entryMap.size}`);
     }
     return { removed, total: this.entryMap.size };
@@ -343,7 +344,7 @@ class TokenPool {
     if (!item) return false;
     item.enabled = enabled;
     if (!enabled) item.live = false;
-    await this.persistToDisk();
+    await this.persistToDiskNow();
     return true;
   }
 
@@ -365,7 +366,7 @@ class TokenPool {
         item.enabled = false;
       }
     }
-    await this.persistToDisk();
+    this.persistToDisk();
     return true;
   }
 
@@ -385,7 +386,7 @@ class TokenPool {
     const regionInfo = buildRegionInfo(item.region);
     const capabilities = await this.fetchDynamicCapabilities(token, regionInfo);
     item.dynamicCapabilities = { ...capabilities, updatedAt: Date.now() };
-    await this.persistToDisk();
+    this.persistToDisk();
     return item.dynamicCapabilities;
   }
 
@@ -395,37 +396,40 @@ class TokenPool {
    */
   async refreshAllDynamicCapabilities(): Promise<DynamicCapabilitiesRefreshResult[]> {
     if (!this.enabled) return [];
-    const entries = this.getEntries(false).filter(
+    const entries = Array.from(this.entryMap.values()).filter(
       (item) => item.enabled && item.live !== false && Boolean(item.region)
     );
-    const results: DynamicCapabilitiesRefreshResult[] = [];
-    for (const entry of entries) {
-      try {
-        const regionInfo = buildRegionInfo(entry.region!);
-        const capabilities = await this.fetchDynamicCapabilities(entry.token, regionInfo);
-        const current = this.entryMap.get(entry.token);
-        if (current) {
-          current.dynamicCapabilities = { ...capabilities, updatedAt: Date.now() };
+    if (entries.length === 0) return [];
+
+    const results = await Promise.all(
+      entries.map(async (entry): Promise<DynamicCapabilitiesRefreshResult> => {
+        try {
+          const regionInfo = buildRegionInfo(entry.region!);
+          const capabilities = await this.fetchDynamicCapabilities(entry.token, regionInfo);
+          const current = this.entryMap.get(entry.token);
+          if (current) {
+            current.dynamicCapabilities = { ...capabilities, updatedAt: Date.now() };
+          }
+          return {
+            token: maskToken(entry.token),
+            region: entry.region!,
+            imageModels: capabilities.imageModels?.length ?? 0,
+            videoModels: capabilities.videoModels?.length ?? 0,
+            capabilityTags: capabilities.capabilityTags ?? [],
+          };
+        } catch (err: unknown) {
+          return {
+            token: maskToken(entry.token),
+            region: entry.region!,
+            imageModels: 0,
+            videoModels: 0,
+            capabilityTags: [],
+            error: err instanceof Error ? err.message : String(err),
+          };
         }
-        results.push({
-          token: maskToken(entry.token),
-          region: entry.region!,
-          imageModels: capabilities.imageModels?.length ?? 0,
-          videoModels: capabilities.videoModels?.length ?? 0,
-          capabilityTags: capabilities.capabilityTags ?? [],
-        });
-      } catch (err: any) {
-        results.push({
-          token: maskToken(entry.token),
-          region: entry.region!,
-          imageModels: 0,
-          videoModels: 0,
-          capabilityTags: [],
-          error: err?.message || String(err),
-        });
-      }
-    }
-    if (entries.length > 0) await this.persistToDisk();
+      })
+    );
+    this.persistToDisk();
     return results;
   }
 
@@ -440,7 +444,7 @@ class TokenPool {
       return { checked: 0, live: 0, invalid: 0, disabled: 0 };
     }
     this.healthChecking = true;
-    const entries = this.getEntries(false).filter((item) => item.enabled);
+    const entries = Array.from(this.entryMap.values()).filter((item) => item.enabled);
     let checked = 0;
     let live = 0;
     let invalid = 0;
@@ -472,8 +476,8 @@ class TokenPool {
               try {
                 const credit = await getCredit(current.token, regionInfo);
                 current.lastCredit = credit.totalCredit;
-              } catch (err: any) {
-                current.lastError = `credit_check_failed: ${err?.message || String(err)}`;
+              } catch (err: unknown) {
+                current.lastError = `credit_check_failed: ${err instanceof Error ? err.message : String(err)}`;
               }
             }
           } else {
@@ -481,11 +485,11 @@ class TokenPool {
             current.consecutiveFailures++;
             current.lastError = "token_not_live";
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           invalid++;
           current.live = false;
           current.consecutiveFailures++;
-          current.lastError = err?.message || String(err);
+          current.lastError = err instanceof Error ? err.message : String(err);
         }
 
         if (
@@ -498,7 +502,7 @@ class TokenPool {
         }
       }
       this.lastHealthCheckAt = Date.now();
-      await this.persistToDisk();
+      this.persistToDisk();
       logger.info(
         `Token pool health check done: checked=${checked}, live=${live}, invalid=${invalid}, disabled=${disabled}`
       );
@@ -513,7 +517,7 @@ class TokenPool {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
     this.healthCheckTimer = setInterval(() => {
       this.runHealthCheck().catch((err) => {
-        logger.warn(`Token pool health check failed: ${err?.message || String(err)}`);
+        logger.warn(`Token pool health check failed: ${err instanceof Error ? err.message : String(err)}`);
       });
     }, this.healthCheckIntervalMs);
     if (typeof this.healthCheckTimer.unref === "function") this.healthCheckTimer.unref();
@@ -522,14 +526,14 @@ class TokenPool {
   private async loadFromDisk() {
     await fs.ensureDir(path.dirname(this.filePath));
     if (!await fs.pathExists(this.filePath)) {
-      await this.persistToDisk();
+      await this.persistToDiskNow();
       return;
     }
     let data: TokenPoolFile | null = null;
     try {
       data = await fs.readJson(this.filePath);
-    } catch (err: any) {
-      logger.warn(`Token pool file parse failed, fallback to empty: ${err?.message || String(err)}`);
+    } catch (err: unknown) {
+      logger.warn(`Token pool file parse failed, fallback to empty: ${err instanceof Error ? err.message : String(err)}`);
       data = null;
     }
     const items = Array.isArray(data?.tokens) ? data!.tokens : [];
@@ -556,13 +560,26 @@ class TokenPool {
     for (const [token, item] of nextMap.entries()) this.entryMap.set(token, item);
   }
 
-  private async persistToDisk() {
+  private async persistToDiskNow(): Promise<void> {
+    if (this.persistTimer) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
     await fs.ensureDir(path.dirname(this.filePath));
     const payload: TokenPoolFile = {
       updatedAt: Date.now(),
-      tokens: this.getEntries(false)
+      tokens: Array.from(this.entryMap.values())
     };
     await fs.writeJson(this.filePath, payload, { spaces: 2 });
+  }
+
+  /** Debounced persist — coalesces rapid successive calls into one disk write. */
+  private persistToDisk(): void {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persistToDiskNow().catch((err) => logger.warn(`Token pool persist failed: ${err instanceof Error ? err.message : String(err)}`));
+    }, 100);
   }
 
   private parseAuthorizationTokens(authorization?: string): { tokens: string[]; error: AuthorizationTokenError | null } {
@@ -720,8 +737,8 @@ class TokenPool {
         ...capabilities,
         updatedAt: Date.now(),
       };
-    } catch (err: any) {
-      item.lastError = `dynamic_capability_refresh_failed: ${err?.message || String(err)}`;
+    } catch (err: unknown) {
+      item.lastError = `dynamic_capability_refresh_failed: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
@@ -738,54 +755,21 @@ class TokenPool {
           : regionInfo.isSG
             ? "sg"
             : "cn";
-    const reverseMap = this.getReverseModelMapByRegion(regionCode);
-    const imageConfig = await request("post", "/mweb/v1/get_common_config", token, regionInfo, {
-      data: {},
-      params: { needCache: true, needRefresh: false },
-    });
-    const videoConfig = await request("post", "/mweb/v1/video_generate/get_common_config", token, regionInfo, {
-      data: { scene: "generate_video", params: {} },
-    });
-
-    const imageReqKeys = Array.isArray(imageConfig?.model_list)
-      ? imageConfig.model_list
-          .map((item: any) => (typeof item?.model_req_key === "string" ? item.model_req_key : ""))
-          .filter(Boolean)
-      : [];
-    const videoReqKeys = Array.isArray(videoConfig?.model_list)
-      ? videoConfig.model_list
-          .map((item: any) => (typeof item?.model_req_key === "string" ? item.model_req_key : ""))
-          .filter(Boolean)
-      : [];
-    const imageModels = imageReqKeys.map((key) => reverseMap[key]).filter(Boolean);
-    const videoModels = videoReqKeys.map((key) => reverseMap[key]).filter(Boolean);
+    const reverseMap = buildReverseMap(regionCode);
+    const { imageModels, videoModels } = await fetchConfigModelReqKeys(token, regionCode);
+    const imageIds = imageModels.map((m) => reverseMap[m.reqKey]).filter(Boolean) as string[];
+    const videoIds = videoModels.map((m) => reverseMap[m.reqKey]).filter(Boolean) as string[];
     const capabilityTags = new Set<string>();
-    // Capability matching should be based on translated modelIds, not upstream req keys.
-    for (const model of videoModels) {
+    for (const model of videoIds) {
       if (model.includes("seedance_40")) capabilityTags.add("omni_reference");
       if (model.includes("veo3")) capabilityTags.add("veo3");
       if (model.includes("sora2")) capabilityTags.add("sora2");
     }
     return {
-      imageModels: imageModels.length ? Array.from(new Set(imageModels)) : undefined,
-      videoModels: videoModels.length ? Array.from(new Set(videoModels)) : undefined,
+      imageModels: imageIds.length ? Array.from(new Set(imageIds)) : undefined,
+      videoModels: videoIds.length ? Array.from(new Set(videoIds)) : undefined,
       capabilityTags: capabilityTags.size ? Array.from(capabilityTags) : undefined,
     };
-  }
-
-  private getReverseModelMapByRegion(region: RegionCode): Record<string, string> {
-    const maps = region === "us"
-      ? [IMAGE_MODEL_MAP_US, VIDEO_MODEL_MAP_US]
-      : (region === "hk" || region === "jp" || region === "sg")
-        ? [IMAGE_MODEL_MAP_ASIA, VIDEO_MODEL_MAP_ASIA]
-        : [IMAGE_MODEL_MAP, VIDEO_MODEL_MAP];
-    const reverse: Record<string, string> = {};
-    for (const map of maps) {
-      for (const [modelId, reqKey] of Object.entries(map)) {
-        reverse[reqKey] = modelId;
-      }
-    }
-    return reverse;
   }
 }
 

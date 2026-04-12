@@ -269,23 +269,24 @@ export function createQueryCommandHandlers(deps: QueryDeps) {
         deps.fail("No enabled+live tokens with region found in pool.");
       }
 
-      const results: JsonRecord[] = [];
-      for (const entry of entries) {
-        const masked = maskToken(entry.token);
-        try {
-          const direct = await getLiveModels(`Bearer ${entry.token}`, entry.region);
-          results.push({
-            token: masked,
-            region: entry.region,
-            source: direct.source,
-            models: isVerbose
-              ? direct.data
-              : direct.data.map((m: any) => m.id),
-          });
-        } catch (error: any) {
-          results.push({ token: masked, region: entry.region, error: error.message });
-        }
-      }
+      const results = await Promise.all(
+        entries.map(async (entry): Promise<JsonRecord> => {
+          const masked = maskToken(entry.token);
+          try {
+            const direct = await getLiveModels(`Bearer ${entry.token}`, entry.region);
+            return {
+              token: masked,
+              region: entry.region,
+              source: direct.source,
+              models: isVerbose
+                ? direct.data
+                : direct.data.map((m: any) => m.id),
+            };
+          } catch (error: unknown) {
+            return { token: masked, region: entry.region, error: error instanceof Error ? error.message : String(error) };
+          }
+        })
+      );
 
       if (isJson) {
         deps.printCommandJson("models.list", results);

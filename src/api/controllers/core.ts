@@ -44,7 +44,7 @@ const WEB_ID = Math.random() * 999999999999999999 + 7000000000000000000;
 // 用户ID（32位hex，无横线）
 const USER_ID = util.uuid(false);
 // 国际区前端域名（Origin/Referer 用于跨域 commerce 请求）
-const INTERNATIONAL_FRONTEND_ORIGIN = "https://dreamina.capcut.com";
+export const INTERNATIONAL_FRONTEND_ORIGIN = "https://dreamina.capcut.com";
 // 伪装headers
 const FAKE_HEADERS = {
   Accept: "application/json, text/plain, */*",
@@ -242,10 +242,10 @@ export function parseRegionFromToken(refreshToken: string): RegionInfo {
  * @param cnPath 国内站路径
  * @returns Referer URL
  */
-export function getRefererByRegion(regionInfo: RegionInfo, cnPath: string): string {
-  return regionInfo.isInternational
-    ? `${INTERNATIONAL_FRONTEND_ORIGIN}/`
-    : `https://jimeng.jianying.com${cnPath}`;
+export function getRefererByRegion(regionInfo: RegionInfo, cnPath: string, intlPath?: string): string {
+  const base = regionInfo.isInternational ? INTERNATIONAL_FRONTEND_ORIGIN : BASE_URL_CN;
+  const path = regionInfo.isInternational ? (intlPath ?? "/") : cnPath;
+  return `${base}${path}`;
 }
 
 /**
@@ -486,9 +486,8 @@ export async function request(
       if (options.responseType == "stream") return response;
 
       // 记录响应数据摘要
-      const responseDataSummary = JSON.stringify(response.data).substring(0, 500) +
-        (JSON.stringify(response.data).length > 500 ? "..." : "");
-      //const responseDataSummary = JSON.stringify(response.data)
+      const responseJson = JSON.stringify(response.data);
+      const responseDataSummary = responseJson.substring(0, 500) + (responseJson.length > 500 ? "..." : "");
       logger.info(`响应数据摘要: ${responseDataSummary}`);
 
       // 检查HTTP状态码

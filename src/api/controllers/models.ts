@@ -112,7 +112,7 @@ function resolveToken(authorization?: string): string | undefined {
   return fromPool || undefined;
 }
 
-function getRegionalMaps(region: RegionCode): Record<string, string>[] {
+export function getRegionalMaps(region: RegionCode): Record<string, string>[] {
   if (region === "us") return [IMAGE_MODEL_MAP_US, VIDEO_MODEL_MAP_US];
   if (region === "hk" || region === "jp" || region === "sg") return [IMAGE_MODEL_MAP_ASIA, VIDEO_MODEL_MAP_ASIA];
   if (region === "cn") return [IMAGE_MODEL_MAP, VIDEO_MODEL_MAP];
@@ -133,13 +133,18 @@ function resolveRegion(authorization?: string, xRegion?: string): RegionCode {
   return "cn";
 }
 
-function buildReverseMap(region: RegionCode): Record<string, string> {
+const reverseMapCache = new Map<string, Record<string, string>>();
+
+export function buildReverseMap(region: RegionCode): Record<string, string> {
+  const cached = reverseMapCache.get(region);
+  if (cached) return cached;
   const reverse: Record<string, string> = {};
   for (const map of getRegionalMaps(region)) {
     for (const [modelId, upstreamKey] of Object.entries(map)) {
       reverse[upstreamKey] = modelId;
     }
   }
+  reverseMapCache.set(region, reverse);
   return reverse;
 }
 
@@ -210,7 +215,7 @@ function toUpstreamMeta(item: Record<string, unknown>): UpstreamModelMeta | unde
   };
 }
 
-async function fetchConfigModelReqKeys(
+export async function fetchConfigModelReqKeys(
   token: string,
   region: RegionCode
 ): Promise<{ imageModels: UpstreamModelMeta[]; videoModels: UpstreamModelMeta[] }> {

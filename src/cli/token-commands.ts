@@ -199,30 +199,29 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       console.log(`Checking ${pairs.length} token(s)`);
     }
 
-    let invalid = 0;
-    let requestErrors = 0;
-    const results: Array<{ token_masked: string; region: string; live?: boolean; error?: string }> = [];
-
-    for (const { token, region } of pairs) {
-      const masked = maskToken(token);
-      try {
-        const live = await getTokenLiveStatus(token, buildRegionInfo(region));
-        await tokenPool.syncTokenCheckResult(token, live);
-        if (live) {
-          if (!args.json) console.log(`[OK]   ${masked} (${region}) live=true`);
-          results.push({ token_masked: masked, region, live: true });
-        } else {
-          invalid += 1;
-          if (!args.json) console.log(`[FAIL] ${masked} (${region}) live=false`);
-          results.push({ token_masked: masked, region, live: false });
+    const results = await Promise.all(
+      pairs.map(async ({ token, region }): Promise<{ token_masked: string; region: string; live?: boolean; error?: string }> => {
+        const masked = maskToken(token);
+        try {
+          const live = await getTokenLiveStatus(token, buildRegionInfo(region));
+          await tokenPool.syncTokenCheckResult(token, live);
+          if (live) {
+            if (!args.json) console.log(`[OK]   ${masked} (${region}) live=true`);
+            return { token_masked: masked, region, live: true };
+          } else {
+            if (!args.json) console.log(`[FAIL] ${masked} (${region}) live=false`);
+            return { token_masked: masked, region, live: false };
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!args.json) console.log(`[ERROR] ${masked} (${region}) ${message}`);
+          return { token_masked: masked, region, error: message };
         }
-      } catch (error) {
-        requestErrors += 1;
-        const message = error instanceof Error ? error.message : String(error);
-        if (!args.json) console.log(`[ERROR] ${masked} (${region}) ${message}`);
-        results.push({ token_masked: masked, region, error: message });
-      }
-    }
+      })
+    );
+
+    const invalid = results.filter((r) => r.live === false).length;
+    const requestErrors = results.filter((r) => r.error).length;
 
     if (args.json) {
       deps.printCommandJson("token.check", results, {
@@ -277,17 +276,17 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
     const pairs = resolveTokenRegionPairs(explicitTokens, regionCode, deps);
 
     const toErrorResult = (token: string, region: RegionCode, error: unknown) => ({
-      token, region, error: error instanceof Error ? error.message : String(error),
+      token_masked: maskToken(token), region, error: error instanceof Error ? error.message : String(error),
     });
 
-    type ResultBase = { token: string; region: RegionCode };
+    type ResultBase = { token_masked: string; region: RegionCode };
     type ErrorResult = ResultBase & { error: string };
     type CreditResult = ResultBase & { points: Awaited<ReturnType<typeof getCredit>> };
     type ReceiveResult = ResultBase & { credits: Awaited<ReturnType<typeof getCredit>>; received: boolean } & Partial<ErrorResult>;
 
     const fetchPoints = async ({ token, region }: { token: string; region: RegionCode }): Promise<CreditResult | ErrorResult> => {
       try {
-        return { token, region, points: await getCredit(token, buildRegionInfo(region)) };
+        return { token_masked: maskToken(token), region, points: await getCredit(token, buildRegionInfo(region)) };
       } catch (error) {
         return toErrorResult(token, region, error);
       }
@@ -298,14 +297,14 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       try {
         const currentCredit = await getCredit(token, regionInfo);
         if (currentCredit.totalCredit > 0) {
-          return { token, region, credits: currentCredit, received: false };
+          return { token_masked: maskToken(token), region, credits: currentCredit, received: false };
         }
         try {
           await receiveCredit(token, regionInfo);
           const updatedCredit = await getCredit(token, regionInfo);
-          return { token, region, credits: updatedCredit, received: true };
+          return { token_masked: maskToken(token), region, credits: updatedCredit, received: true };
         } catch (error) {
-          return { token, region, credits: currentCredit, received: false, ...toErrorResult(token, region, error) };
+          return { token_masked: maskToken(token), region, credits: currentCredit, received: false, ...toErrorResult(token, region, error) };
         }
       } catch (error) {
         return toErrorResult(token, region, error);

@@ -2,7 +2,7 @@
 import APIException from "@/lib/exceptions/APIException.ts";
 import EX from "@/api/consts/exceptions.ts";
 import util from "@/lib/util.ts";
-import { getCredit, receiveCredit, request, getAssistantId, checkImageContent, RegionInfo } from "./core.ts";
+import { getCredit, receiveCredit, request, getAssistantId, checkImageContent, RegionInfo, getRefererByRegion } from "./core.ts";
 import logger from "@/lib/logger.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 import { AsyncTaskInfo, buildPendingTaskInfo, buildPollerOptions } from "./task-common.ts";
@@ -224,9 +224,7 @@ export async function generateImageComposition(
     metricsExtra,
   });
 
-  const imageReferer = regionInfo.isCN
-    ? "https://jimeng.jianying.com/ai-tool/generate?type=image"
-    : "https://dreamina.capcut.com/ai-tool/generate?type=image";
+  const imageReferer = getRefererByRegion(regionInfo, "/ai-tool/generate?type=image", "/ai-tool/generate?type=image");
 
   const { aigc_data } = await request(
     "post",
@@ -461,9 +459,7 @@ async function generateImagesInternal(
     metricsExtra,
   });
 
-  const imageReferer = regionInfo.isCN
-    ? "https://jimeng.jianying.com/ai-tool/generate?type=image"
-    : "https://dreamina.capcut.com/ai-tool/generate?type=image";
+  const imageReferer = getRefererByRegion(regionInfo, "/ai-tool/generate?type=image", "/ai-tool/generate?type=image");
 
   const { aigc_data } = await request(
     "post",
@@ -629,9 +625,7 @@ async function generateJimeng4xMultiImages(
     metricsExtra,
   });
 
-  const imageReferer = regionInfo.isCN
-    ? "https://jimeng.jianying.com/ai-tool/generate?type=image"
-    : "https://dreamina.capcut.com/ai-tool/generate?type=image";
+  const imageReferer = getRefererByRegion(regionInfo, "/ai-tool/generate?type=image", "/ai-tool/generate?type=image");
 
   const { aigc_data } = await request(
     "post",
@@ -841,9 +835,7 @@ export async function upscaleImage(
     metricsExtra,
   });
 
-  const imageReferer = regionInfo.isCN
-    ? "https://jimeng.jianying.com/ai-tool/generate?type=image"
-    : "https://dreamina.capcut.com/ai-tool/generate?type=image";
+  const imageReferer = getRefererByRegion(regionInfo, "/ai-tool/generate?type=image", "/ai-tool/generate?type=image");
 
   const { aigc_data } = await request(
     "post",

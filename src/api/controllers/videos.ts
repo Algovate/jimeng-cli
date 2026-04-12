@@ -6,7 +6,7 @@ import APIException from "@/lib/exceptions/APIException.ts";
 
 import EX from "@/api/consts/exceptions.ts";
 import util from "@/lib/util.ts";
-import { assertSafeExternalHttpUrl, getCredit, receiveCredit, request, getAssistantId, checkImageContent, RegionInfo } from "./core.ts";
+import { assertSafeExternalHttpUrl, getCredit, receiveCredit, request, getAssistantId, checkImageContent, RegionInfo, getRefererByRegion } from "./core.ts";
 import logger from "@/lib/logger.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 import { AsyncTaskInfo, buildPendingTaskInfo, buildPollerOptions } from "./task-common.ts";
@@ -875,9 +875,7 @@ export async function generateVideo(
   }
 
   // 发送请求
-  const videoReferer = regionInfo.isCN
-    ? "https://jimeng.jianying.com/ai-tool/generate?type=video"
-    : "https://dreamina.capcut.com/ai-tool/generate?type=video";
+  const videoReferer = getRefererByRegion(regionInfo, "/ai-tool/generate?type=video", "/ai-tool/generate?type=video");
   const { aigc_data } = await request(
     "post",
     "/mweb/v1/aigc_draft/generate",
