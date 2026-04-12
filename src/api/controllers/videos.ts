@@ -775,7 +775,8 @@ export async function generateVideo(
       isDefaultSeed: 1,
       originSubmitId,
       isRegenerate: false,
-      enterFrom: "click",
+      enterFrom: "use_bgimage_prompt",
+      position: "page_bottom_box",
       functionMode: flFunctionMode,
       sceneOptions: JSON.stringify([sceneOption]),
     });
@@ -948,7 +949,8 @@ export async function generateVideo(
 
     // 记录详细信息
     if (currentItemList.length > 0) {
-      const tempVideoUrl = currentItemList[0]?.video?.transcoded_video?.origin?.video_url ||
+      const tempVideoUrl = currentItemList[0]?.common_attr?.transcoded_video?.origin?.video_url ||
+                          currentItemList[0]?.video?.transcoded_video?.origin?.video_url ||
                           currentItemList[0]?.video?.play_url ||
                           currentItemList[0]?.video?.download_url ||
                           currentItemList[0]?.video?.url;
