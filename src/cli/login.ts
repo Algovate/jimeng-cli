@@ -2,6 +2,7 @@ import { execSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 
 import minimist from "minimist";
 
@@ -24,6 +25,8 @@ type LoginDeps = {
   printCommandJson: (command: string, data: unknown, meta?: JsonRecord) => void;
 };
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const LOGIN_SCRIPT = path.join(__dirname, "..", "..", "scripts", "jimeng_login_helper.py");
 
 /**
