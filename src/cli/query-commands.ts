@@ -306,7 +306,7 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
     const type = parseTaskTypeOrFail(deps.getSingleString(args, "type"), deps);
     const responseFormat = parseResponseFormatOrFail(deps.getSingleString(args, "response-format"), deps);
     const token = deps.getSingleString(args, "token");
-    const region = deps.getRegionWithDefault(args);
+    const region = deps.getSingleString(args, "region");
     const isJson = Boolean(args.json);
     const pick = await deps.pickDirectTokenForTask(token, region);
     const normalized: unknown = await getTaskResponse(
@@ -351,7 +351,7 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
     const taskId = deps.getSingleString(args, "task-id");
     if (!taskId) deps.fail(`Missing required --task-id.\n\n${deps.usageTaskWait()}`);
     const token = deps.getSingleString(args, "token");
-    const region = deps.getRegionWithDefault(args);
+    const region = deps.getSingleString(args, "region");
     const isJson = Boolean(args.json);
     const body: JsonRecord = {};
     const type = parseTaskTypeOrFail(deps.getSingleString(args, "type"), deps);
@@ -401,7 +401,7 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
     }
 
     const token = deps.getSingleString(args, "token");
-    const region = deps.getRegionWithDefault(args);
+    const region = deps.getSingleString(args, "region");
     const type = deps.getSingleString(args, "type");
     const countRaw = deps.getSingleString(args, "count");
     const count = countRaw ? Number(countRaw) : 20;

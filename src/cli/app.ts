@@ -241,7 +241,7 @@ function usageVideoGenerate(): string {
 function usageTaskGet(): string {
   return buildUsageText("  jimeng task get --task-id <id> [options]", [
     "  --token <token>          Optional, override token-pool selection",
-    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
+    "  --region <region>        Filter token by region (cn/us/hk/jp/sg)",
     "  --task-id <id>           Required history/task id",
     "  --type <type>            Optional image or video",
     "  --response-format <fmt>  Optional url or b64_json",
@@ -253,7 +253,7 @@ function usageTaskGet(): string {
 function usageTaskWait(): string {
   return buildUsageText("  jimeng task wait --task-id <id> [options]", [
     "  --token <token>          Optional, override token-pool selection",
-    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
+    "  --region <region>        Filter token by region (cn/us/hk/jp/sg)",
     "  --task-id <id>           Required history/task id",
     "  --type <type>            Optional image or video",
     "  --response-format <fmt>  Optional url or b64_json",
@@ -267,7 +267,7 @@ function usageTaskWait(): string {
 function usageTaskList(): string {
   return buildUsageText("  jimeng task list [options]", [
     "  --token <token>          Optional, override token-pool selection",
-    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
+    "  --region <region>        Filter token by region (cn/us/hk/jp/sg)",
     "  --type <type>            Filter by type: image, video, or all (default all)",
     "  --count <num>            Number of items per page (default 20)",
     JSON_OPTION,

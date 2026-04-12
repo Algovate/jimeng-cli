@@ -783,6 +783,11 @@ export function tokenSplit(authorization: string) {
  */
 export async function getTokenLiveStatus(refreshToken: string, regionInfo: RegionInfo) {
   try {
+    if (regionInfo.isInternational) {
+      // 国际区 (US/HK/JP/SG) 使用不同的 passport 端点
+      return await checkInternationalTokenLive(refreshToken, regionInfo);
+    }
+    // CN 区: /passport/account/info/v2
     const result = await request(
       "POST",
       "/passport/account/info/v2",
@@ -802,8 +807,50 @@ export async function getTokenLiveStatus(refreshToken: string, regionInfo: Regio
         ? (resultObj.data as Record<string, unknown>)
         : null;
     // request 内部已调用 checkResult，ret!=0 会抛错；判活以 user_id 为准。
-    // user_id 可能位于根对象或 data 对象。
     return Boolean(resultObj.user_id || nestedData?.user_id);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 国际区 token 判活 — 使用 dreamina.capcut.com/passport/web/account/info/
+ * 国际区没有 /passport/account/info/v2 端点，需要走前端域名
+ */
+async function checkInternationalTokenLive(refreshToken: string, regionInfo: RegionInfo): Promise<boolean> {
+  const aid = getAssistantId(regionInfo);
+  const cookie = generateCookie(refreshToken);
+  try {
+    const response = await axios.get(
+      "https://dreamina.capcut.com/passport/web/account/info/",
+      {
+        params: {
+          aid,
+          account_sdk_source: "web",
+          sdk_version: "2.1.10-tiktok",
+          language: regionInfo.isJP ? "ja" : "en",
+        },
+        headers: {
+          ...FAKE_HEADERS,
+          Cookie: cookie,
+          Referer: "https://dreamina.capcut.com/ai-tool/home/",
+          Origin: "https://dreamina.capcut.com",
+          Appid: String(aid),
+          "store-country-code": regionInfo.isUS ? "us" : regionInfo.isJP ? "jp" : regionInfo.isHK ? "hk" : "sg",
+          "store-country-code-src": "uid",
+        },
+        timeout: 15000,
+      }
+    );
+    const data = response.data;
+    if (data && typeof data === "object") {
+      const obj = data as Record<string, unknown>;
+      // 响应中包含 user_id 或 email 说明 token 有效
+      if (obj.user_id || obj.email || obj.data) {
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
   }

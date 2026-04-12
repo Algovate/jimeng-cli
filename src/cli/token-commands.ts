@@ -143,47 +143,70 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       console.log(usage);
       return;
     }
-    const region = deps.getRegionWithDefault(args);
-    const regionCode = deps.parseRegionOrFail(region);
-    if (!regionCode) {
-      deps.fail("Missing region. Use --region cn/us/hk/jp/sg.");
-    }
-    const tokens = await collectTokensFromArgs(args, usage, deps, true);
-    if (!args.json) {
-      console.log(`Checking ${tokens.length} token(s)`);
-    }
+    const explicitRegion = deps.getSingleString(args, "region");
+    const regionCode = explicitRegion ? deps.parseRegionOrFail(explicitRegion) : undefined;
 
     await deps.ensureTokenPoolReady();
+
+    // Collect tokens: from args or default to all enabled+live tokens with region
+    const explicitTokens = await collectTokensFromArgs(args, usage, deps, false);
+    let tokensToCheck: Array<{ token: string; region: RegionCode }>;
+    if (explicitTokens.length > 0) {
+      tokensToCheck = explicitTokens.map((token) => {
+        const entryRegion = tokenPool.getTokenEntry(token)?.region;
+        const finalRegion = regionCode || entryRegion;
+        if (!finalRegion) {
+          deps.fail(`Missing region for token ${maskToken(token)}. Provide --region or register token in token-pool.`);
+        }
+        return { token, region: finalRegion };
+      });
+    } else {
+      const poolEntries = tokenPool.getEntries(false).filter(
+        (item) => item.enabled && item.region
+      );
+      if (poolEntries.length === 0) {
+        deps.fail("No token available. Provide --token or configure token-pool.");
+      }
+      tokensToCheck = poolEntries.map((item) => ({
+        token: item.token,
+        region: item.region as RegionCode,
+      }));
+    }
+
+    if (!args.json) {
+      console.log(`Checking ${tokensToCheck.length} token(s)`);
+    }
+
     let invalid = 0;
     let requestErrors = 0;
-    const results: Array<{ token_masked: string; live?: boolean; error?: string }> = [];
-    for (const token of tokens) {
+    const results: Array<{ token_masked: string; region: string; live?: boolean; error?: string }> = [];
+    for (const { token, region } of tokensToCheck) {
       const masked = maskToken(token);
       try {
-        const live = await getTokenLiveStatus(token, buildRegionInfo(regionCode));
+        const live = await getTokenLiveStatus(token, buildRegionInfo(region));
         await tokenPool.syncTokenCheckResult(token, live);
         if (live === true) {
-          if (!args.json) console.log(`[OK]   ${masked} live=true`);
+          if (!args.json) console.log(`[OK]   ${masked} (${region}) live=true`);
         } else {
           invalid += 1;
-          if (!args.json) console.log(`[FAIL] ${masked} live=false`);
+          if (!args.json) console.log(`[FAIL] ${masked} (${region}) live=false`);
         }
-        results.push({ token_masked: masked, live: live === true });
+        results.push({ token_masked: masked, region, live: live === true });
       } catch (error) {
         requestErrors += 1;
         const message = error instanceof Error ? error.message : String(error);
-        if (!args.json) console.log(`[ERROR] ${masked} ${message}`);
-        results.push({ token_masked: masked, error: message });
+        if (!args.json) console.log(`[ERROR] ${masked} (${region}) ${message}`);
+        results.push({ token_masked: masked, region, error: message });
       }
     }
     if (args.json) {
       deps.printCommandJson("token.check", results, {
-        total: tokens.length,
+        total: tokensToCheck.length,
         invalid,
         request_errors: requestErrors,
       });
     } else {
-      console.log(`Summary: total=${tokens.length} invalid=${invalid} request_errors=${requestErrors}`);
+      console.log(`Summary: total=${tokensToCheck.length} invalid=${invalid} request_errors=${requestErrors}`);
     }
     if (requestErrors > 0) process.exit(3);
     if (invalid > 0) process.exit(2);
@@ -292,21 +315,24 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       console.log(usage);
       return;
     }
-    const region = deps.getRegionWithDefault(args);
     await deps.ensureTokenPoolReady();
     const tokens = await collectTokensFromArgs(args, usage, deps, true);
-    const regionCode = deps.parseRegionOrFail(region);
     const payload = action === "add"
-      ? {
-          ...(await tokenPool.addTokens(tokens, { defaultRegion: regionCode || undefined })),
-          summary: tokenPool.getSummary(),
-        }
+      ? await (async () => {
+          const region = deps.getRegionWithDefault(args);
+          const regionCode = deps.parseRegionOrFail(region);
+          return {
+            ...(await tokenPool.addTokens(tokens, { defaultRegion: regionCode || undefined })),
+            summary: tokenPool.getSummary(),
+          };
+        })()
       : {
           ...(await tokenPool.removeTokens(tokens)),
           summary: tokenPool.getSummary(),
         };
     if (args.json) {
-      deps.printCommandJson(`token.${action}`, deps.unwrapBody(payload), { region });
+      const region = action === "add" ? deps.getRegionWithDefault(args) : undefined;
+      deps.printCommandJson(`token.${action}`, deps.unwrapBody(payload), region ? { region } : undefined);
       return;
     }
     deps.printJson(deps.unwrapBody(payload));
@@ -400,12 +426,12 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
     },
     {
       name: "check",
-      description: "Validate tokens directly",
-      usageLine: "  jimeng token check --token <token> [--token <token> ...] [options]",
+      description: "Validate tokens",
+      usageLine: "  jimeng token check [options]",
       options: [
-        "  --token <token>          Token, can be repeated",
+        "  --token <token>          Token, can be repeated (default: all enabled tokens)",
         "  --token-file <path>      Read tokens from file (one per line, # for comments)",
-        "  --region <region>        X-Region, default cn (cn/us/hk/jp/sg)",
+        "  --region <region>        Override region (default: token's registered region)",
         deps.jsonOption,
         deps.helpOption,
       ],
@@ -418,7 +444,7 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       options: [
         "  --token <token>          Token, can be repeated",
         "  --token-file <path>      Read tokens from file (one per line, # for comments)",
-        "  --region <region>        Filter tokens by X-Region, default cn (cn/us/hk/jp/sg)",
+        "  --region <region>        Filter tokens by region (cn/us/hk/jp/sg)",
         deps.jsonOption,
         deps.helpOption,
       ],
@@ -431,7 +457,7 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       options: [
         "  --token <token>          Token, can be repeated",
         "  --token-file <path>      Read tokens from file (one per line, # for comments)",
-        "  --region <region>        Filter tokens by X-Region, default cn (cn/us/hk/jp/sg)",
+        "  --region <region>        Filter tokens by region (cn/us/hk/jp/sg)",
         deps.jsonOption,
         deps.helpOption,
       ],
