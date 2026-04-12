@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/jimeng-cli.svg)](https://www.npmjs.com/package/jimeng-cli)
 
-即梦/CapCut 图像与视频生成工具集，提供 CLI 与 MCP Server（stdio）。
+即梦/CapCut 图像与视频生成工具集，提供 CLI 与 MCP Server. 不需要VIP账号，普通账号即可
 
 ## 要求
 
