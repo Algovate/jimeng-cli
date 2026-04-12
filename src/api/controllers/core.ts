@@ -17,7 +17,6 @@ import { BASE_URL_DREAMINA_US, BASE_URL_DREAMINA_HK, DA_VERSION, WEB_VERSION } f
 import {
   BASE_URL_CN,
   BASE_URL_US_COMMERCE,
-  BASE_URL_HK_COMMERCE,
   BASE_URL_HK,
   DEFAULT_ASSISTANT_ID_CN,
   DEFAULT_ASSISTANT_ID_US,
@@ -44,6 +43,8 @@ const DEVICE_ID = Math.random() * 999999999999999999 + 7000000000000000000;
 const WEB_ID = Math.random() * 999999999999999999 + 7000000000000000000;
 // 用户ID（32位hex，无横线）
 const USER_ID = util.uuid(false);
+// 国际区前端域名（Origin/Referer 用于跨域 commerce 请求）
+const INTERNATIONAL_FRONTEND_ORIGIN = "https://dreamina.capcut.com";
 // 伪装headers
 const FAKE_HEADERS = {
   Accept: "application/json, text/plain, */*",
@@ -242,9 +243,8 @@ export function parseRegionFromToken(refreshToken: string): RegionInfo {
  * @returns Referer URL
  */
 export function getRefererByRegion(regionInfo: RegionInfo, cnPath: string): string {
-  const { isInternational } = regionInfo;
-  return isInternational
-    ? "https://dreamina.capcut.com/"
+  return regionInfo.isInternational
+    ? `${INTERNATIONAL_FRONTEND_ORIGIN}/`
     : `https://jimeng.jianying.com${cnPath}`;
 }
 
@@ -294,7 +294,7 @@ export function generateCookie(refreshToken: string) {
  */
 export async function getCredit(refreshToken: string, regionInfo: RegionInfo) {
   const referer = getRefererByRegion(regionInfo, "/ai-tool/image/generate");
-  const origin = regionInfo.isInternational ? "https://dreamina.capcut.com" : undefined;
+  const origin = regionInfo.isInternational ? INTERNATIONAL_FRONTEND_ORIGIN : undefined;
 
   const {
     credit: { gift_credit, purchase_credit, vip_credit }
@@ -323,7 +323,7 @@ export async function getCredit(refreshToken: string, regionInfo: RegionInfo) {
 export async function receiveCredit(refreshToken: string, regionInfo: RegionInfo) {
   logger.info("正在尝试收取今日积分...")
   const referer = getRefererByRegion(regionInfo, "/ai-tool/home");
-  const origin = regionInfo.isInternational ? "https://dreamina.capcut.com" : undefined;
+  const origin = regionInfo.isInternational ? INTERNATIONAL_FRONTEND_ORIGIN : undefined;
   const timeZone = regionInfo.isUS
     ? "America/New_York"
     : regionInfo.isHK
@@ -828,7 +828,7 @@ async function checkInternationalTokenLive(refreshToken: string, regionInfo: Reg
   const cookie = generateCookie(refreshToken);
   try {
     const response = await axios.get(
-      "https://dreamina.capcut.com/passport/web/account/info/",
+      `${INTERNATIONAL_FRONTEND_ORIGIN}/passport/web/account/info/`,
       {
         params: {
           aid,
@@ -839,8 +839,8 @@ async function checkInternationalTokenLive(refreshToken: string, regionInfo: Reg
         headers: {
           ...FAKE_HEADERS,
           Cookie: cookie,
-          Referer: "https://dreamina.capcut.com/ai-tool/home/",
-          Origin: "https://dreamina.capcut.com",
+          Referer: `${INTERNATIONAL_FRONTEND_ORIGIN}/ai-tool/home/`,
+          Origin: INTERNATIONAL_FRONTEND_ORIGIN,
           Appid: String(aid),
           "store-country-code": countryCode,
           "store-country-code-src": "uid",

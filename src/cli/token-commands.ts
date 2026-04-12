@@ -280,11 +280,15 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
     const explicitTokens = await collectTokensFromArgs(args, usage, deps, false);
     const pairs = resolveTokenRegionPairs(explicitTokens, regionCode, deps);
 
+    const toErrorResult = (token: string, region: RegionCode, error: unknown) => ({
+      token, region, error: error instanceof Error ? error.message : String(error),
+    });
+
     const fetchPoints = async ({ token, region }: { token: string; region: RegionCode }) => {
       try {
         return { token, region, points: await getCredit(token, buildRegionInfo(region)) };
-      } catch (error: any) {
-        return { token, region, error: error?.message || String(error) };
+      } catch (error) {
+        return toErrorResult(token, region, error);
       }
     };
 
@@ -299,11 +303,11 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
           await receiveCredit(token, regionInfo);
           const updatedCredit = await getCredit(token, regionInfo);
           return { token, region, credits: updatedCredit, received: true };
-        } catch (error: any) {
-          return { token, region, credits: currentCredit, received: false, error: error?.message || String(error) };
+        } catch (error) {
+          return { token, region, credits: currentCredit, received: false, ...toErrorResult(token, region, error) };
         }
-      } catch (error: any) {
-        return { token, region, error: error?.message || String(error) };
+      } catch (error) {
+        return toErrorResult(token, region, error);
       }
     };
 

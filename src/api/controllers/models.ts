@@ -160,46 +160,37 @@ function resolveFetchToken(token: string | undefined): string {
   return normalizedToken;
 }
 
+function extractValidOptions(item: Record<string, unknown>): Array<Record<string, unknown>> {
+  return (Array.isArray(item.options) ? item.options : [])
+    .filter((opt): opt is Record<string, unknown> =>
+      !!opt && typeof opt === "object" && typeof opt.key === "string" && opt.key.length > 0
+    );
+}
+
 function extractCapabilities(item: Record<string, unknown>): string[] {
   const features = Array.isArray(item.feats)
-    ? item.feats.filter((feature): feature is string => typeof feature === "string" && feature.length > 0)
+    ? item.feats.filter((f): f is string => typeof f === "string" && f.length > 0)
     : [];
-  const options = Array.isArray(item.options)
-    ? item.options
-        .map((option) =>
-          option && typeof option === "object" && typeof (option as Record<string, unknown>).key === "string"
-            ? (option as Record<string, string>).key
-            : undefined
-        )
-        .filter((key): key is string => typeof key === "string" && key.length > 0)
-    : [];
-
-  return Array.from(new Set([...features, ...options]));
+  const optionKeys = extractValidOptions(item).map(o => o.key as string);
+  return Array.from(new Set([...features, ...optionKeys]));
 }
 
 function extractEnumParams(item: Record<string, unknown>): ModelParams {
   const params: ModelParams = {};
-  const options = Array.isArray(item.options) ? item.options : [];
-  for (const opt of options) {
-    if (!opt || typeof opt !== "object") continue;
-    const o = opt as Record<string, unknown>;
-    const key = o.key;
-    if (typeof key !== "string" || !key) continue;
+  for (const o of extractValidOptions(item)) {
     const ev = o.enum_val as Record<string, unknown> | undefined;
     if (!ev) continue;
     const sv = ev.string_value as string[] | undefined;
     const iv = ev.int_value as number[] | undefined;
     const vals = sv || iv;
     if (vals && vals.length > 0) {
-      params[key] = vals;
+      params[o.key as string] = vals;
     }
   }
-  // Image models: extract resolution levels from resolution_map
   const rm = item.resolution_map as Record<string, unknown> | undefined;
   if (rm && typeof rm === "object") {
     params["resolution"] = Object.keys(rm).map(String);
   }
-  // Image models: extract sample_steps
   const steps = item.sample_steps as Record<string, number> | undefined;
   if (steps && typeof steps === "object") {
     params["steps"] = [steps.min_steps, steps.max_steps];
@@ -207,51 +198,41 @@ function extractEnumParams(item: Record<string, unknown>): ModelParams {
   return params;
 }
 
+function toUpstreamMeta(item: Record<string, unknown>): UpstreamModelMeta | undefined {
+  const reqKey = item?.model_req_key;
+  if (typeof reqKey !== "string" || reqKey.length === 0) return undefined;
+  return {
+    reqKey,
+    modelName: typeof item?.model_name === "string" ? item.model_name : undefined,
+    modelTip: typeof item?.model_tip === "string" ? item.model_tip : undefined,
+    capabilities: extractCapabilities(item),
+    params: extractEnumParams(item),
+  };
+}
+
 async function fetchConfigModelReqKeys(
   token: string,
   region: RegionCode
 ): Promise<{ imageModels: UpstreamModelMeta[]; videoModels: UpstreamModelMeta[] }> {
   const regionInfo = buildRegionInfo(region);
-  const imageConfig = await request("post", "/mweb/v1/get_common_config", token, regionInfo, {
-    data: {},
-    params: { needCache: true, needRefresh: false },
-  });
-  const videoConfig = await request("post", "/mweb/v1/video_generate/get_common_config", token, regionInfo, {
-    data: { scene: "generate_video", params: {} },
-  });
+  const [imageConfig, videoConfig] = await Promise.all([
+    request("post", "/mweb/v1/get_common_config", token, regionInfo, {
+      data: {},
+      params: { needCache: true, needRefresh: false },
+    }),
+    request("post", "/mweb/v1/video_generate/get_common_config", token, regionInfo, {
+      data: { scene: "generate_video", params: {} },
+    }),
+  ]);
 
-  const imageModels = Array.isArray(imageConfig?.model_list)
-    ? imageConfig.model_list
-        .map((item: Record<string, unknown>) => {
-          const reqKey = item?.model_req_key;
-          if (typeof reqKey !== "string" || reqKey.length === 0) return undefined;
-          return {
-            reqKey,
-            modelName: typeof item?.model_name === "string" ? item.model_name : undefined,
-            modelTip: typeof item?.model_tip === "string" ? item.model_tip : undefined,
-            capabilities: extractCapabilities(item),
-            params: extractEnumParams(item),
-          } as UpstreamModelMeta;
-        })
-        .filter((item): item is UpstreamModelMeta => Boolean(item))
-    : [];
-  const videoModels = Array.isArray(videoConfig?.model_list)
-    ? videoConfig.model_list
-        .map((item: Record<string, unknown>) => {
-          const reqKey = item?.model_req_key;
-          if (typeof reqKey !== "string" || reqKey.length === 0) return undefined;
-          return {
-            reqKey,
-            modelName: typeof item?.model_name === "string" ? item.model_name : undefined,
-            modelTip: typeof item?.model_tip === "string" ? item.model_tip : undefined,
-            capabilities: extractCapabilities(item),
-            params: extractEnumParams(item),
-          } as UpstreamModelMeta;
-        })
-        .filter((item): item is UpstreamModelMeta => Boolean(item))
-    : [];
+  const toList = (config: Record<string, unknown> | undefined) =>
+    Array.isArray(config?.model_list)
+      ? config.model_list
+          .map(toUpstreamMeta)
+          .filter((m): m is UpstreamModelMeta => Boolean(m))
+      : [];
 
-  return { imageModels, videoModels };
+  return { imageModels: toList(imageConfig), videoModels: toList(videoConfig) };
 }
 
 export async function getLiveModels(
