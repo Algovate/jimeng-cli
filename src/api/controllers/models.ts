@@ -16,6 +16,8 @@ import {
 } from "@/api/controllers/core.ts";
 import tokenPool, { type DynamicCapabilitiesRefreshResult } from "@/lib/session-pool.ts";
 
+export type ModelParams = Record<string, string[] | number[]>;
+
 type ModelItem = {
   id: string;
   object: "model";
@@ -25,6 +27,7 @@ type ModelItem = {
   model_name?: string;
   description?: string;
   capabilities?: string[];
+  params?: ModelParams;
 };
 
 type CachedResult = {
@@ -68,6 +71,7 @@ type UpstreamModelMeta = {
   modelName?: string;
   modelTip?: string;
   capabilities: string[];
+  params: ModelParams;
 };
 
 function buildModelItem(modelId: string, meta?: UpstreamModelMeta): ModelItem {
@@ -81,6 +85,7 @@ function buildModelItem(modelId: string, meta?: UpstreamModelMeta): ModelItem {
   if (meta?.reqKey) item.model_req_key = meta.reqKey;
   if (meta?.modelName) item.model_name = meta.modelName;
   if (meta?.capabilities?.length) item.capabilities = Array.from(new Set(meta.capabilities)).sort();
+  if (meta?.params && Object.keys(meta.params).length > 0) item.params = meta.params;
 
   if (meta?.modelTip) {
     item.description = meta.modelTip;
@@ -172,6 +177,36 @@ function extractCapabilities(item: Record<string, unknown>): string[] {
   return Array.from(new Set([...features, ...options]));
 }
 
+function extractEnumParams(item: Record<string, unknown>): ModelParams {
+  const params: ModelParams = {};
+  const options = Array.isArray(item.options) ? item.options : [];
+  for (const opt of options) {
+    if (!opt || typeof opt !== "object") continue;
+    const o = opt as Record<string, unknown>;
+    const key = o.key;
+    if (typeof key !== "string" || !key) continue;
+    const ev = o.enum_val as Record<string, unknown> | undefined;
+    if (!ev) continue;
+    const sv = ev.string_value as string[] | undefined;
+    const iv = ev.int_value as number[] | undefined;
+    const vals = sv || iv;
+    if (vals && vals.length > 0) {
+      params[key] = vals;
+    }
+  }
+  // Image models: extract resolution levels from resolution_map
+  const rm = item.resolution_map as Record<string, unknown> | undefined;
+  if (rm && typeof rm === "object") {
+    params["resolution"] = Object.keys(rm).map(String);
+  }
+  // Image models: extract sample_steps
+  const steps = item.sample_steps as Record<string, number> | undefined;
+  if (steps && typeof steps === "object") {
+    params["steps"] = [steps.min_steps, steps.max_steps];
+  }
+  return params;
+}
+
 async function fetchConfigModelReqKeys(
   token: string,
   region: RegionCode
@@ -195,6 +230,7 @@ async function fetchConfigModelReqKeys(
             modelName: typeof item?.model_name === "string" ? item.model_name : undefined,
             modelTip: typeof item?.model_tip === "string" ? item.model_tip : undefined,
             capabilities: extractCapabilities(item),
+            params: extractEnumParams(item),
           } as UpstreamModelMeta;
         })
         .filter((item): item is UpstreamModelMeta => Boolean(item))
@@ -209,6 +245,7 @@ async function fetchConfigModelReqKeys(
             modelName: typeof item?.model_name === "string" ? item.model_name : undefined,
             modelTip: typeof item?.model_tip === "string" ? item.model_tip : undefined,
             capabilities: extractCapabilities(item),
+            params: extractEnumParams(item),
           } as UpstreamModelMeta;
         })
         .filter((item): item is UpstreamModelMeta => Boolean(item))

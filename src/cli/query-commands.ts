@@ -182,7 +182,6 @@ function printModelIds(models: unknown[]): void {
 }
 
 function printModelVerbose(models: unknown[]): void {
-  console.log("id\ttype\tdesc\tcapabilities");
   for (const item of models) {
     if (!item || typeof item !== "object") continue;
     const m = item as JsonRecord;
@@ -193,7 +192,17 @@ function printModelVerbose(models: unknown[]): void {
     const caps = Array.isArray(m.capabilities)
       ? m.capabilities.filter((c): c is string => typeof c === "string").join(",")
       : "-";
-    console.log(`${id}\ttype=${type}\tdesc=${desc}\tcapabilities=${caps}`);
+    console.log(`${id}  [${type}]  ${desc}`);
+    console.log(`  capabilities: ${caps}`);
+    const params = m.params;
+    if (params && typeof params === "object") {
+      for (const [key, vals] of Object.entries(params as Record<string, unknown>)) {
+        if (Array.isArray(vals)) {
+          console.log(`  ${key}: ${vals.join(", ")}`);
+        }
+      }
+    }
+    console.log("");
   }
 }
 
@@ -267,7 +276,10 @@ export function createQueryCommandHandlers(deps: QueryDeps) {
           results.push({
             token: masked,
             region: entry.region,
-            models: direct.data.map((m: any) => m.id),
+            source: direct.source,
+            models: isVerbose
+              ? direct.data
+              : direct.data.map((m: any) => m.id),
           });
         } catch (error: any) {
           results.push({ token: masked, region: entry.region, error: error.message });
@@ -282,6 +294,8 @@ export function createQueryCommandHandlers(deps: QueryDeps) {
         console.log(`[${r.region}] ${r.token}`);
         if (r.error) {
           console.log(`  error: ${r.error}`);
+        } else if (isVerbose) {
+          printModelVerbose(r.models as unknown[]);
         } else {
           for (const id of r.models as string[]) console.log(`  ${id}`);
         }
