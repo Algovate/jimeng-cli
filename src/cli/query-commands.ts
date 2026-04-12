@@ -4,6 +4,7 @@ import { buildRegionInfo, type RegionCode } from "@/api/controllers/core.ts";
 import { getLiveModels, refreshAllTokenModels } from "@/api/controllers/models.ts";
 import { getTaskResponse, waitForTaskResponse, getAssetList, AssetListOptions } from "@/api/controllers/tasks.ts";
 import tokenPool from "@/lib/session-pool.ts";
+import { maskToken } from "@/lib/util.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -270,7 +271,7 @@ export function createQueryCommandHandlers(deps: QueryDeps) {
 
       const results: JsonRecord[] = [];
       for (const entry of entries) {
-        const masked = entry.token.length <= 10 ? "***" : `${entry.token.slice(0, 4)}...${entry.token.slice(-4)}`;
+        const masked = maskToken(entry.token);
         try {
           const direct = await getLiveModels(`Bearer ${entry.token}`, entry.region);
           results.push({

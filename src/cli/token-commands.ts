@@ -12,6 +12,7 @@ import {
   type RegionCode
 } from "@/api/controllers/core.ts";
 import tokenPool from "@/lib/session-pool.ts";
+import { maskToken } from "@/lib/util.ts";
 
 type JsonRecord = Record<string, unknown>;
 type CliHandler = (argv: string[]) => Promise<void>;
@@ -58,11 +59,6 @@ type TokenCommandDeps = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function maskToken(token: string): string {
-  if (token.length <= 10) return "***";
-  return `${token.slice(0, 4)}...${token.slice(-4)}`;
-}
 
 function formatUnixMs(value: unknown): string {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return "-";
@@ -284,7 +280,12 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       token, region, error: error instanceof Error ? error.message : String(error),
     });
 
-    const fetchPoints = async ({ token, region }: { token: string; region: RegionCode }) => {
+    type ResultBase = { token: string; region: RegionCode };
+    type ErrorResult = ResultBase & { error: string };
+    type CreditResult = ResultBase & { points: Awaited<ReturnType<typeof getCredit>> };
+    type ReceiveResult = ResultBase & { credits: Awaited<ReturnType<typeof getCredit>>; received: boolean } & Partial<ErrorResult>;
+
+    const fetchPoints = async ({ token, region }: { token: string; region: RegionCode }): Promise<CreditResult | ErrorResult> => {
       try {
         return { token, region, points: await getCredit(token, buildRegionInfo(region)) };
       } catch (error) {
@@ -292,7 +293,7 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       }
     };
 
-    const processReceive = async ({ token, region }: { token: string; region: RegionCode }) => {
+    const processReceive = async ({ token, region }: { token: string; region: RegionCode }): Promise<ReceiveResult | ErrorResult> => {
       const regionInfo = buildRegionInfo(region);
       try {
         const currentCredit = await getCredit(token, regionInfo);
@@ -311,8 +312,9 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       }
     };
 
-    const processor = action === "points" ? fetchPoints : processReceive;
-    const payload = await Promise.all(pairs.map(processor));
+    const payload = action === "points"
+      ? await Promise.all(pairs.map(fetchPoints))
+      : await Promise.all(pairs.map(processReceive));
 
     if (args.json) {
       deps.printCommandJson(`token.${action}`, payload);

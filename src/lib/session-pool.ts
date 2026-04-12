@@ -7,6 +7,7 @@ function sample<T>(arr: T[]): T | undefined {
 }
 
 import logger from "@/lib/logger.ts";
+import { maskToken } from "@/lib/util.ts";
 import {
   assertTokenWithoutRegionPrefix,
   buildRegionInfo,
@@ -163,12 +164,12 @@ class TokenPool {
     };
   }
 
-  getEntries(maskToken = true): TokenPoolEntry[] {
+  getEntries(shouldMask = true): TokenPoolEntry[] {
     const items = Array.from(this.entryMap.values()).map((item) => ({ ...item }));
-    if (!maskToken) return items;
+    if (!shouldMask) return items;
     return items.map((item) => ({
       ...item,
-      token: this.maskToken(item.token)
+      token: maskToken(item.token)
     }));
   }
 
@@ -261,7 +262,7 @@ class TokenPool {
         token: null,
         region: null,
         error: "prefixed_token_not_supported",
-        reason: `token ${this.maskToken(prefixedCandidate.token)} 使用了已废弃的 region 前缀`,
+        reason: `token ${maskToken(prefixedCandidate.token)} 使用了已废弃的 region 前缀`,
       };
     }
 
@@ -379,8 +380,8 @@ class TokenPool {
   async refreshDynamicCapabilitiesForToken(token: string): Promise<TokenDynamicCapabilities> {
     if (!this.enabled) throw new Error("Token pool disabled");
     const item = this.entryMap.get(token);
-    if (!item) throw new Error(`Token not found in pool: ${this.maskToken(token)}`);
-    if (!item.region) throw new Error(`Token ${this.maskToken(token)} has no region`);
+    if (!item) throw new Error(`Token not found in pool: ${maskToken(token)}`);
+    if (!item.region) throw new Error(`Token ${maskToken(token)} has no region`);
     const regionInfo = buildRegionInfo(item.region);
     const capabilities = await this.fetchDynamicCapabilities(token, regionInfo);
     item.dynamicCapabilities = { ...capabilities, updatedAt: Date.now() };
@@ -407,7 +408,7 @@ class TokenPool {
           current.dynamicCapabilities = { ...capabilities, updatedAt: Date.now() };
         }
         results.push({
-          token: this.maskToken(entry.token),
+          token: maskToken(entry.token),
           region: entry.region!,
           imageModels: capabilities.imageModels?.length ?? 0,
           videoModels: capabilities.videoModels?.length ?? 0,
@@ -415,7 +416,7 @@ class TokenPool {
         });
       } catch (err: any) {
         results.push({
-          token: this.maskToken(entry.token),
+          token: maskToken(entry.token),
           region: entry.region!,
           imageModels: 0,
           videoModels: 0,
@@ -564,11 +565,6 @@ class TokenPool {
     await fs.writeJson(this.filePath, payload, { spaces: 2 });
   }
 
-  private maskToken(token: string) {
-    if (token.length <= 10) return "***";
-    return `${token.slice(0, 4)}...${token.slice(-4)}`;
-  }
-
   private parseAuthorizationTokens(authorization?: string): { tokens: string[]; error: AuthorizationTokenError | null } {
     if (typeof authorization !== "string" || authorization.trim().length === 0) {
       return { tokens: [], error: null };
@@ -602,7 +598,7 @@ class TokenPool {
       if (!token) continue;
       const parsedRegion = parseRegionCode(item.region || defaultRegion);
       if (!parsedRegion) {
-        throw new Error(`token ${this.maskToken(token)} 缺少有效 region（仅支持 cn/us/hk/jp/sg）`);
+        throw new Error(`token ${maskToken(token)} 缺少有效 region（仅支持 cn/us/hk/jp/sg）`);
       }
       normalized.push({
         token,

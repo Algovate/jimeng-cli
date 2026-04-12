@@ -86,4 +86,12 @@ const util = {
   },
 };
 
+/**
+ * Mask a token for display, e.g. "abcd...wxyz"
+ */
+export function maskToken(token: string): string {
+  if (token.length <= 10) return "***";
+  return `${token.slice(0, 4)}...${token.slice(-4)}`;
+}
+
 export default util;
