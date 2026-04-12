@@ -280,29 +280,35 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
     const explicitTokens = await collectTokensFromArgs(args, usage, deps, false);
     const pairs = resolveTokenRegionPairs(explicitTokens, regionCode, deps);
 
-    const payload = action === "points"
-      ? await Promise.all(
-          pairs.map(async ({ token, region }) => ({
-            token,
-            points: await getCredit(token, buildRegionInfo(region)),
-          }))
-        )
-      : await Promise.all(
-          pairs.map(async ({ token, region }) => {
-            const regionInfo = buildRegionInfo(region);
-            const currentCredit = await getCredit(token, regionInfo);
-            if (currentCredit.totalCredit <= 0) {
-              try {
-                await receiveCredit(token, regionInfo);
-                const updatedCredit = await getCredit(token, regionInfo);
-                return { token, credits: updatedCredit, received: true };
-              } catch (error: any) {
-                return { token, credits: currentCredit, received: false, error: error?.message || String(error) };
-              }
-            }
-            return { token, credits: currentCredit, received: false };
-          })
-        );
+    const fetchPoints = async ({ token, region }: { token: string; region: RegionCode }) => {
+      try {
+        return { token, region, points: await getCredit(token, buildRegionInfo(region)) };
+      } catch (error: any) {
+        return { token, region, error: error?.message || String(error) };
+      }
+    };
+
+    const processReceive = async ({ token, region }: { token: string; region: RegionCode }) => {
+      const regionInfo = buildRegionInfo(region);
+      try {
+        const currentCredit = await getCredit(token, regionInfo);
+        if (currentCredit.totalCredit > 0) {
+          return { token, region, credits: currentCredit, received: false };
+        }
+        try {
+          await receiveCredit(token, regionInfo);
+          const updatedCredit = await getCredit(token, regionInfo);
+          return { token, region, credits: updatedCredit, received: true };
+        } catch (error: any) {
+          return { token, region, credits: currentCredit, received: false, error: error?.message || String(error) };
+        }
+      } catch (error: any) {
+        return { token, region, error: error?.message || String(error) };
+      }
+    };
+
+    const processor = action === "points" ? fetchPoints : processReceive;
+    const payload = await Promise.all(pairs.map(processor));
 
     if (args.json) {
       deps.printCommandJson(`token.${action}`, payload);
@@ -399,12 +405,13 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       return;
     }
     await deps.ensureTokenPoolReady();
-    const payload = action === "pool-check"
-      ? { ...(await tokenPool.runHealthCheck()), summary: tokenPool.getSummary() }
-      : (() => {
-          tokenPool.reloadFromDisk();
-          return { reloaded: true, summary: tokenPool.getSummary(), items: buildTokenPoolSnapshot().items };
-        })();
+    let payload;
+    if (action === "pool-check") {
+      payload = { ...(await tokenPool.runHealthCheck()), summary: tokenPool.getSummary() };
+    } else {
+      tokenPool.reloadFromDisk();
+      payload = { reloaded: true, summary: tokenPool.getSummary(), items: buildTokenPoolSnapshot().items };
+    }
     if (args.json) {
       deps.printCommandJson(`token.${action}`, deps.unwrapBody(payload));
       return;

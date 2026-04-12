@@ -34,10 +34,10 @@ export const DEFAULT_IMAGE_MODEL = "jimeng-4.5";
 export const DEFAULT_IMAGE_MODEL_US = "jimeng-4.5";
 export const DEFAULT_VIDEO_MODEL = "jimeng-video-3.5-pro";
 
-// 草稿版本
-export const DRAFT_VERSION = "3.3.9";
+// 草稿版本 (与浏览器 da_version 保持同步)
+export const DRAFT_VERSION = "3.3.12";
 export const DRAFT_MIN_VERSION = "3.0.2";
-export const DRAFT_VERSION_OMNI = "3.3.9";
+export const DRAFT_VERSION_OMNI = "3.3.12";
 
 // omni_reference 模式专用 benefit_type
 export const OMNI_BENEFIT_TYPE = "dreamina_video_seedance_20_video_add";

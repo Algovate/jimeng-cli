@@ -294,6 +294,7 @@ export function generateCookie(refreshToken: string) {
  */
 export async function getCredit(refreshToken: string, regionInfo: RegionInfo) {
   const referer = getRefererByRegion(regionInfo, "/ai-tool/image/generate");
+  const origin = regionInfo.isInternational ? "https://dreamina.capcut.com" : undefined;
 
   const {
     credit: { gift_credit, purchase_credit, vip_credit }
@@ -301,6 +302,7 @@ export async function getCredit(refreshToken: string, regionInfo: RegionInfo) {
     data: {},
     headers: {
       Referer: referer,
+      ...(origin ? { Origin: origin } : {}),
     },
     noDefaultParams: true
   });
@@ -321,6 +323,7 @@ export async function getCredit(refreshToken: string, regionInfo: RegionInfo) {
 export async function receiveCredit(refreshToken: string, regionInfo: RegionInfo) {
   logger.info("正在尝试收取今日积分...")
   const referer = getRefererByRegion(regionInfo, "/ai-tool/home");
+  const origin = regionInfo.isInternational ? "https://dreamina.capcut.com" : undefined;
   const timeZone = regionInfo.isUS
     ? "America/New_York"
     : regionInfo.isHK
@@ -336,7 +339,8 @@ export async function receiveCredit(refreshToken: string, regionInfo: RegionInfo
       time_zone: timeZone
     },
     headers: {
-      Referer: referer
+      Referer: referer,
+      ...(origin ? { Origin: origin } : {}),
     }
   });
   logger.info(`今日${receive_quota}积分收取成功`);
@@ -380,9 +384,10 @@ export async function request(
     aid = DEFAULT_ASSISTANT_ID_US;
     region = REGION_US;
   } else if (isHK || isJP || isSG) {
-    // HK, JP and SG regions use the same SG base URL
+    // HK, JP and SG regions use the same SG base URL for non-commerce endpoints
     if (uri.startsWith("/commerce/")) {
-      baseUrl = BASE_URL_HK_COMMERCE;
+      // Commerce endpoints route through the US commerce domain
+      baseUrl = BASE_URL_US_COMMERCE;
     } else {
       baseUrl = BASE_URL_DREAMINA_HK;
     }
