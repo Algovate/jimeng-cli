@@ -106,14 +106,17 @@ export class JimengErrorHandler {
     elapsedTime: number,
     status: number,
     itemCount: number,
-    historyId?: string
+    historyId?: string,
+    type: 'image' | 'video' = 'image'
   ): void {
-    const message = `轮询超时: 已轮询 ${pollCount} 次，耗时 ${elapsedTime} 秒，最终状态: ${status}，图片数量: ${itemCount}`;
+    const typeText = type === 'image' ? '图片' : '视频';
+    const message = `轮询超时: 已轮询 ${pollCount} 次，耗时 ${elapsedTime} 秒，最终状态: ${status}，${typeText}数量: ${itemCount}`;
     logger.warn(message + (historyId ? `，历史ID: ${historyId}` : ''));
 
     if (itemCount === 0) {
-      throw new APIException(EX.API_IMAGE_GENERATION_FAILED,
-        `生成超时且无结果，状态码: ${status}${historyId ? `，历史ID: ${historyId}` : ''}`);
+      const exception = type === 'image' ? EX.API_IMAGE_GENERATION_FAILED : EX.API_VIDEO_GENERATION_FAILED;
+      throw new APIException(exception,
+        `${typeText}生成超时且无结果，状态码: ${status}${historyId ? `，历史ID: ${historyId}` : ''}`);
     }
 
     // 如果有部分结果，不抛出异常，让调用者处理

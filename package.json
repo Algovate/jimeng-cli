@@ -23,10 +23,10 @@
     "dist/"
   ],
   "scripts": {
-    "dev": "tsup src/index.ts src/cli/index.ts src/mcp/index.ts --format cjs,esm --sourcemap --dts --watch",
+    "dev": "tsup --watch",
     "start": "node --enable-source-maps --no-node-snapshot dist/index.js",
-    "build": "tsup src/index.ts src/cli/index.ts src/mcp/index.ts --format cjs,esm --sourcemap --dts --clean",
-    "mcp:dev": "tsup src/mcp/index.ts --format cjs,esm --sourcemap --dts --watch --onSuccess \"node --enable-source-maps --no-node-snapshot dist/mcp/index.js\"",
+    "build": "tsup",
+    "mcp:dev": "tsup --entry src/mcp/index.ts --watch --onSuccess \"node --enable-source-maps --no-node-snapshot dist/mcp/index.js\"",
     "mcp:start": "node --enable-source-maps --no-node-snapshot dist/mcp/index.js",
     "mcp:smoke": "npm run build && node scripts/mcp-smoke.mjs",
     "test": "npm run mcp:smoke && npm run cli:smoke",

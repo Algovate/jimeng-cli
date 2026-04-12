@@ -152,7 +152,19 @@ function applyWaitOptionsToBody(
 }
 
 async function downloadBinary(url: string, deps: Pick<MediaDeps, "fail">): Promise<{ buffer: Buffer; contentType: string | null }> {
-  const response = await fetch(url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: controller.signal });
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      deps.fail(`Download timed out after 120s: ${url}`);
+    }
+    throw err;
+  }
+  clearTimeout(timeout);
   if (!response.ok) {
     deps.fail(`Download failed (${response.status}): ${url}`);
   }
@@ -243,6 +255,9 @@ export function createMediaCommandHandlers(deps: MediaDeps): {
       const parsed = Number(sampleStrengthRaw);
       if (!Number.isFinite(parsed)) {
         deps.fail(`Invalid --sample-strength: ${sampleStrengthRaw}`);
+      }
+      if (parsed < 0 || parsed > 1) {
+        deps.fail(`Invalid --sample-strength: ${sampleStrengthRaw} (must be between 0 and 1)`);
       }
       body.sample_strength = parsed;
     }

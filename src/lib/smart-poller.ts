@@ -69,7 +69,7 @@ export class SmartPoller {
   /**
    * 根据状态码计算智能轮询间隔
    */
-  private getSmartInterval(status: number, itemCount: number): number {
+  private getSmartInterval(status: number, _itemCount: number): number {
     const baseInterval = this.options.pollInterval;
     
     // 根据状态码调整间隔
@@ -121,18 +121,13 @@ export class SmartPoller {
     if (status === 30) {
       return { shouldExit: true, reason: '任务失败' };
     }
-    
-    // 3. 已获得期望数量的结果（但必须状态已完成）
-    if (itemCount >= this.options.expectedItemCount && (status === 10 || status === 50)) {
-      return { shouldExit: true, reason: `已获得完整结果集(${itemCount}/${this.options.expectedItemCount})` };
-    }
-    
-    // 4. 轮询次数超限
+
+    // 3. 轮询次数超限
     if (this.pollCount >= this.options.maxPollCount) {
       return { shouldExit: true, reason: '轮询次数超限' };
     }
-    
-    // 5. 时间超限但有结果
+
+    // 4. 时间超限但有结果
     if (elapsedTime >= this.options.timeoutSeconds && itemCount > 0) {
       return { shouldExit: true, reason: '时间超限但已有结果' };
     }
@@ -151,6 +146,7 @@ export class SmartPoller {
     
     let lastData: T;
     let lastStatus: PollingStatus = { status: 20, itemCount: 0 };
+    let exitReason = '';
     
     while (true) {
       this.pollCount++;
@@ -174,6 +170,7 @@ export class SmartPoller {
         const { shouldExit, reason } = this.shouldExitPolling(status);
         
         if (shouldExit) {
+          exitReason = reason;
           logger.info(`退出轮询: ${reason}, 最终${this.options.type === 'image' ? '图片' : '视频'}数量=${status.itemCount}`);
 
           // 处理失败情况 (如果有部分结果，handleGenerationFailure 会返回 false 而不抛出异常)
@@ -189,7 +186,8 @@ export class SmartPoller {
               elapsedTime,
               status.status,
               status.itemCount,
-              historyId
+              historyId,
+              this.options.type
             );
           }
 
@@ -246,7 +244,7 @@ export class SmartPoller {
       itemCount: lastStatus.itemCount,
       elapsedTime: finalElapsedTime,
       pollCount: this.pollCount,
-      exitReason: this.shouldExitPolling(lastStatus).reason
+      exitReason
     };
     
     logger.info(`${this.options.type === 'image' ? '图像' : '视频'}生成完成: 成功生成 ${lastStatus.itemCount} 个结果，总耗时 ${finalElapsedTime} 秒，最终状态: ${this.getStatusName(lastStatus.status)}`);

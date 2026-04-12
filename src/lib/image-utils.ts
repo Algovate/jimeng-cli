@@ -46,7 +46,11 @@ export function extractImageUrls(itemList: any[]): string[] {
  * @returns 视频URL或null
  */
 export function extractVideoUrl(item: any): string | null {
-  // 优先尝试 transcoded_video.origin.video_url
+  // 优先尝试 common_attr.transcoded_video.origin.video_url
+  if (item?.common_attr?.transcoded_video?.origin?.video_url) {
+    return item.common_attr.transcoded_video.origin.video_url;
+  }
+  // 尝试 video.transcoded_video.origin.video_url
   if (item?.video?.transcoded_video?.origin?.video_url) {
     return item.video.transcoded_video.origin.video_url;
   }
@@ -108,25 +112,18 @@ export async function fetchHighQualityVideoUrl(itemId: string, refreshToken: str
       }
     }
 
-    // 策略2: 正则匹配 dreamnia.jimeng.com 高质量URL
-    const hqUrlMatch = responseStr.match(/https:\/\/v[0-9]+-dreamnia\.jimeng\.com\/[^"\s\\]+/);
-    if (hqUrlMatch && hqUrlMatch[0]) {
-      logger.info(`正则提取到高质量视频URL (dreamnia): ${hqUrlMatch[0]}`);
-      return hqUrlMatch[0];
+    // 策略2: 正则匹配 jimeng / capcut / dreamina 高质量URL
+    const cdnUrlMatch = responseStr.match(/https:\/\/v[0-9]+-[^"\\]*\.(jimeng|capcut|dreamina)\.com\/[^"\s\\]+/);
+    if (cdnUrlMatch && cdnUrlMatch[0]) {
+      logger.info(`正则提取到视频URL: ${cdnUrlMatch[0]}`);
+      return cdnUrlMatch[0];
     }
 
-    // 策略3: 匹配任何 jimeng.com 域名的视频URL
-    const jimengUrlMatch = responseStr.match(/https:\/\/v[0-9]+-[^"\\]*\.jimeng\.com\/[^"\s\\]+/);
-    if (jimengUrlMatch && jimengUrlMatch[0]) {
-      logger.info(`正则提取到jimeng视频URL: ${jimengUrlMatch[0]}`);
-      return jimengUrlMatch[0];
-    }
-
-    // 策略4: 匹配任何视频URL（兜底）
-    const anyVideoUrlMatch = responseStr.match(/https:\/\/v[0-9]+-[^"\\]*\.(vlabvod|jimeng)\.com\/[^"\s\\]+/);
-    if (anyVideoUrlMatch && anyVideoUrlMatch[0]) {
-      logger.info(`从get_local_item_list提取到视频URL: ${anyVideoUrlMatch[0]}`);
-      return anyVideoUrlMatch[0];
+    // 策略3: 匹配任何 vlabvod 域名（兜底）
+    const vlabUrlMatch = responseStr.match(/https:\/\/v[0-9]+-[^"\\]*\.vlabvod\.com\/[^"\s\\]+/);
+    if (vlabUrlMatch && vlabUrlMatch[0]) {
+      logger.info(`正则提取到视频URL: ${vlabUrlMatch[0]}`);
+      return vlabUrlMatch[0];
     }
 
     logger.warn(`未能从get_local_item_list响应中提取到视频URL`);

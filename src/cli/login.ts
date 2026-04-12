@@ -2,8 +2,6 @@ import { execSync, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
-
 import minimist from "minimist";
 
 import {
@@ -25,9 +23,11 @@ type LoginDeps = {
   printCommandJson: (command: string, data: unknown, meta?: JsonRecord) => void;
 };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const LOGIN_SCRIPT = path.join(__dirname, "..", "..", "scripts", "jimeng_login_helper.py");
+// import.meta.url is only available in ESM; LOGIN_SCRIPT is resolved from the bundled dist/ directory.
+const LOGIN_SCRIPT = path.join(
+  path.dirname(new URL(import.meta.url).pathname),
+  "..", "..", "scripts", "jimeng_login_helper.py",
+);
 
 /**
  * Create the login command handler.

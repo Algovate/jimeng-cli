@@ -6,6 +6,19 @@ import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { format as dateFormat } from "date-fns";
 
+// CRC32 查找表（模块级常量，避免每次调用重建）
+const CRC32_TABLE = (() => {
+  const table: number[] = [];
+  for (let i = 0; i < 256; i++) {
+    let crc = i;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 1) ? (0xEDB88320 ^ (crc >>> 1)) : (crc >>> 1);
+    }
+    table[i] = crc;
+  }
+  return table;
+})();
+
 const util = {
   uuid: (separator = true) => (separator ? uuidv4() : uuidv4().replace(/-/g, "")),
 
@@ -62,21 +75,12 @@ const util = {
    * @returns CRC32 十六进制字符串
    */
   calculateCRC32(buffer: ArrayBuffer | Buffer): string {
-    const crcTable = [];
-    for (let i = 0; i < 256; i++) {
-      let crc = i;
-      for (let j = 0; j < 8; j++) {
-        crc = (crc & 1) ? (0xEDB88320 ^ (crc >>> 1)) : (crc >>> 1);
-      }
-      crcTable[i] = crc;
-    }
-
     let crc = 0 ^ (-1);
     const bytes = buffer instanceof ArrayBuffer
       ? new Uint8Array(buffer)
       : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
     for (let i = 0; i < bytes.length; i++) {
-      crc = (crc >>> 8) ^ crcTable[(crc ^ bytes[i]) & 0xFF];
+      crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ bytes[i]) & 0xFF];
     }
     return ((crc ^ (-1)) >>> 0).toString(16).padStart(8, '0');
   },

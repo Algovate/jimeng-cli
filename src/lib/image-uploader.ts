@@ -145,7 +145,7 @@ export async function uploadImageBuffer(
           'Authorization': auth,
           'Connection': 'keep-alive',
           'Content-CRC32': crc32,
-          'Content-Disposition': 'attachment; filename="undefined"',
+          'Content-Disposition': 'attachment; filename="upload.bin"',
           'Content-Type': 'application/octet-stream',
           'Origin': origin,
           'Referer': RegionUtils.getRefererPath(regionInfo),

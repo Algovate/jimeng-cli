@@ -9,6 +9,7 @@ import { getTaskResponse, waitForTaskResponse, getAssetList } from "@/api/contro
 import { DEFAULT_MODEL as DEFAULT_VIDEO_MODEL, generateVideo } from "@/api/controllers/videos.ts";
 import tokenPool from "@/lib/session-pool.ts";
 import util from "@/lib/util.ts";
+import logger from "@/lib/logger.ts";
 
 import type { McpConfig } from "./config.ts";
 import type { JsonObject, MultipartUploadFile } from "./types.ts";
@@ -82,8 +83,9 @@ export class JimengApiClient {
       .getEntries(false)
       .filter((item) => item.enabled && item.live !== false && item.region)
       .filter((item) => {
-        const modelHint = type === "video" ? "video" : "jimeng";
-        return !item.allowedModels?.length || item.allowedModels.some((m) => m.includes(modelHint));
+        if (!item.allowedModels?.length) return true;
+        // For task operations we just need any matching token, not model-specific
+        return true;
       });
     if (candidates.length === 0) {
       throw new Error("No token available for task request. Configure token-pool or pass token.");
@@ -225,10 +227,10 @@ export class JimengApiClient {
     }
 
     if (body.response_format === "b64_json") {
-      const videoBase64 = await util.fetchFileBASE64(videoResult);
+      logger.warn("Video b64_json mode is not recommended — video files can be very large. Using URL mode instead.");
       return {
         created: util.unixTimestamp(),
-        data: [{ b64_json: videoBase64, revised_prompt: prompt }],
+        data: [{ url: videoResult, revised_prompt: prompt }],
       };
     }
 
