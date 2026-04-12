@@ -60,10 +60,20 @@ function usageRoot(): string {
 
 function usageModelsList(): string {
   return buildUsageText("  jimeng models list [options]", [
-    "  --region <region>        X-Region header, default cn (cn/us/hk/jp/sg)",
+    "  --token <token>          Query with specific token",
+    "  --region <region>        Query with specific region (cn/us/hk/jp/sg)",
+    "  --all                    Query all tokens in pool, grouped by token/region",
     "  --verbose                Print rich model fields",
     "  --json                   Print full JSON response",
     HELP_OPTION,
+  ], [
+    {
+      title: "Notes:",
+      lines: [
+        "  Without --token, --region, or --all, uses the first available token in pool.",
+        "  With --all, queries every enabled+live token and groups results by token/region.",
+      ],
+    },
   ]);
 }
 

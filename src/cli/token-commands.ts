@@ -228,8 +228,8 @@ export function createTokenSubcommands(deps: TokenCommandDeps): TokenSubcommandD
       console.log(usage);
       return;
     }
-    const region = deps.getRegionWithDefault(args);
-    const regionCode = deps.parseRegionOrFail(region);
+    const regionArg = deps.getSingleString(args, "region");
+    const regionCode = regionArg ? deps.parseRegionOrFail(regionArg) : undefined;
     await deps.ensureTokenPoolReady();
     const tokens = await collectTokensFromArgs(args, usage, deps, false);
     const resolvedTokens = tokens.length > 0

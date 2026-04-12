@@ -3,6 +3,7 @@ import minimist from "minimist";
 import { buildRegionInfo, type RegionCode } from "@/api/controllers/core.ts";
 import { getLiveModels, refreshAllTokenModels } from "@/api/controllers/models.ts";
 import { getTaskResponse, waitForTaskResponse, getAssetList, AssetListOptions } from "@/api/controllers/tasks.ts";
+import tokenPool from "@/lib/session-pool.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -156,7 +157,7 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
   const handleModelsList = async (argv: string[]): Promise<void> => {
     const args = minimist(argv, {
       string: ["region", "token"],
-      boolean: ["help", "json", "verbose"],
+      boolean: ["help", "json", "verbose", "all"],
     });
 
     if (args.help) {
@@ -164,16 +165,95 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
       return;
     }
 
-    const region = deps.getRegionWithDefault(args);
-    const parsedRegion = deps.parseRegionOrFail(region);
-    const token = deps.getSingleString(args, "token");
+    const isJson = Boolean(args.json);
+    const isVerbose = Boolean(args.verbose);
+    const isAll = Boolean(args.all);
+    const explicitRegion = deps.getSingleString(args, "region");
+    const explicitToken = deps.getSingleString(args, "token");
+
     await deps.ensureTokenPoolReady();
-    const auth = token ? `Bearer ${token}` : undefined;
-    const direct = await getLiveModels(auth, parsedRegion || region);
+
+    // --all: query every enabled+live token with a region
+    if (isAll) {
+      const entries = tokenPool.getEntries(false).filter(
+        (item) => item.enabled && item.live !== false && item.region
+      );
+      if (entries.length === 0) {
+        deps.fail("No enabled+live tokens with region found in pool.");
+      }
+      const results: JsonRecord[] = [];
+      for (const entry of entries) {
+        const masked = entry.token.length > 10
+          ? `${entry.token.slice(0, 4)}...${entry.token.slice(-4)}`
+          : "***";
+        try {
+          const direct = await getLiveModels(`Bearer ${entry.token}`, entry.region);
+          results.push({
+            token: masked,
+            region: entry.region,
+            models: direct.data.map((m: any) => m.id),
+          });
+        } catch (error: any) {
+          results.push({
+            token: masked,
+            region: entry.region,
+            error: error.message,
+          });
+        }
+      }
+      if (isJson) {
+        deps.printCommandJson("models.list", results);
+        return;
+      }
+      for (const r of results) {
+        console.log(`[${r.region}] ${r.token}`);
+        if (r.error) {
+          console.log(`  error: ${r.error}`);
+        } else {
+          for (const id of r.models as string[]) {
+            console.log(`  ${id}`);
+          }
+        }
+        console.log("");
+      }
+      return;
+    }
+
+    // Single query: --token and/or --region
+    const regionCode = explicitRegion ? deps.parseRegionOrFail(explicitRegion) : undefined;
+    const auth = explicitToken ? `Bearer ${explicitToken}` : undefined;
+
+    if (!auth && !regionCode) {
+      // No explicit token/region — pick first available token from pool
+      const poolEntry = tokenPool.getEntries(false).find(
+        (item) => item.enabled && item.live !== false && item.region
+      );
+      if (!poolEntry) {
+        deps.fail("No token available. Provide --token, --region, or --all.");
+      }
+      var pickedToken = poolEntry.token;
+      var pickedRegion = poolEntry.region as RegionCode;
+    } else {
+      // Resolve token from pool if --token given but no explicit region
+      if (explicitToken && !regionCode) {
+        const poolEntry = tokenPool.getTokenEntry(explicitToken);
+        if (poolEntry?.region) {
+          var pickedRegion = poolEntry.region as RegionCode;
+        } else {
+          deps.fail("Missing region for token. Provide --region or register token in token-pool.");
+        }
+        var pickedToken = explicitToken;
+      } else {
+        var pickedToken = explicitToken;
+        var pickedRegion = regionCode!;
+      }
+    }
+
+    const direct = await getLiveModels(pickedToken ? `Bearer ${pickedToken}` : undefined, pickedRegion);
     const normalized: unknown = { object: "list", data: direct.data };
 
-    if (args.json) {
-      deps.printCommandJson("models.list", normalized, { region: region || null });
+    if (isJson) {
+      deps.printCommandJson("models.list", normalized, { region: pickedRegion || null, token: pickedToken ? `${pickedToken.slice(0, 4)}...` : null });
       return;
     }
 
@@ -186,7 +266,7 @@ export function createQueryCommandHandlers(deps: QueryDeps): {
       deps.fail(`No models found in response: ${JSON.stringify(normalized)}`);
     }
 
-    if (args.verbose) {
+    if (isVerbose) {
       console.log("id\ttype\tdesc\tcapabilities");
       for (const item of data) {
         if (!item || typeof item !== "object") continue;
