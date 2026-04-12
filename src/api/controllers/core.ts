@@ -819,6 +819,7 @@ export async function getTokenLiveStatus(refreshToken: string, regionInfo: Regio
  */
 async function checkInternationalTokenLive(refreshToken: string, regionInfo: RegionInfo): Promise<boolean> {
   const aid = getAssistantId(regionInfo);
+  const countryCode = regionInfo.isUS ? "us" : regionInfo.isJP ? "jp" : regionInfo.isHK ? "hk" : "sg";
   const cookie = generateCookie(refreshToken);
   try {
     const response = await axios.get(
@@ -828,7 +829,7 @@ async function checkInternationalTokenLive(refreshToken: string, regionInfo: Reg
           aid,
           account_sdk_source: "web",
           sdk_version: "2.1.10-tiktok",
-          language: regionInfo.isJP ? "ja" : "en",
+          language: countryCode === "jp" ? "ja" : "en",
         },
         headers: {
           ...FAKE_HEADERS,
@@ -836,7 +837,7 @@ async function checkInternationalTokenLive(refreshToken: string, regionInfo: Reg
           Referer: "https://dreamina.capcut.com/ai-tool/home/",
           Origin: "https://dreamina.capcut.com",
           Appid: String(aid),
-          "store-country-code": regionInfo.isUS ? "us" : regionInfo.isJP ? "jp" : regionInfo.isHK ? "hk" : "sg",
+          "store-country-code": countryCode,
           "store-country-code-src": "uid",
         },
         timeout: 15000,
@@ -845,7 +846,6 @@ async function checkInternationalTokenLive(refreshToken: string, regionInfo: Reg
     const data = response.data;
     if (data && typeof data === "object") {
       const obj = data as Record<string, unknown>;
-      // 响应中包含 user_id 或 email 说明 token 有效
       if (obj.user_id || obj.email || obj.data) {
         return true;
       }

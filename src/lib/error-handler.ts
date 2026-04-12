@@ -120,7 +120,7 @@ export class JimengErrorHandler {
     }
 
     // 如果有部分结果，不抛出异常，让调用者处理
-    logger.info(`轮询超时但已获得 ${itemCount} 张图片，将返回现有结果`);
+    logger.info(`轮询超时但已获得 ${itemCount} 个${typeText}，将返回现有结果`);
   }
   
   /**

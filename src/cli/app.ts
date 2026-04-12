@@ -447,7 +447,6 @@ const queryHandlers = createQueryCommandHandlers({
   usageTaskWait,
   usageTaskList,
   getSingleString,
-  getRegionWithDefault,
   parseRegionOrFail,
   ensureTokenPoolReady,
   pickDirectTokenForTask,
