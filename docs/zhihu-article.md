@@ -1,3 +1,5 @@
+![Jimeng CLI 宣传封面](./cover.png)
+
 # 已经有了 Dreamina CLI，为什么我依然推荐你用 Jimeng CLI？
 
 最近看到不少 AI 绘画和视频生成的玩家在折腾各种命令行工具，其中名气比较大的可能要数 Dreamina CLI 了。但今天我想给大家安利另一个“宝藏”级的新工具——**Jimeng CLI**。
