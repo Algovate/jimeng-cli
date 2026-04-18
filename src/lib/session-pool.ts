@@ -1,4 +1,5 @@
 import path from "path";
+import os from "os";
 import fs from "fs-extra";
 
 /** Pick a random element from an array. */
@@ -109,7 +110,7 @@ class TokenPool {
   constructor() {
     this.enabled = process.env.TOKEN_POOL_ENABLED !== "false";
     this.filePath = path.resolve(
-      process.env.TOKEN_POOL_FILE || "configs/token-pool.json"
+      process.env.TOKEN_POOL_FILE || path.join(os.homedir(), ".jimeng", "token-pool.json")
     );
     this.healthCheckIntervalMs = Number(
       process.env.TOKEN_POOL_HEALTHCHECK_INTERVAL_MS || 10 * 60 * 1000
