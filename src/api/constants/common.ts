@@ -117,6 +117,38 @@ export const VIDEO_MODEL_MAP_ASIA = {
   "jimeng-video-2.0-pro": "dreamina_ic_generate_video_model_vgfm1.0"
 };
 
+export type SupportedRegionCode = "cn" | "us" | "hk" | "jp" | "sg";
+export type ModelAvailability = "discoverable" | "manual";
+
+const MANUAL_ONLY_MODELS_BY_REGION: Record<SupportedRegionCode, string[]> = {
+  cn: [
+    "jimeng-video-seedance-2.0-vip",
+    "jimeng-video-seedance-2.0-fast-vip",
+  ],
+  us: [],
+  hk: [],
+  jp: [],
+  sg: [],
+};
+
+const MODEL_REQUIRED_ENTITLEMENTS: Record<string, string[]> = {
+  "jimeng-video-seedance-2.0-vip": ["vip"],
+  "jimeng-video-seedance-2.0-fast-vip": ["vip"],
+};
+
+export function getManualOnlyModelsForRegion(region: SupportedRegionCode): string[] {
+  return MANUAL_ONLY_MODELS_BY_REGION[region] || [];
+}
+
+export function isManualOnlyModel(modelId: string, region: SupportedRegionCode): boolean {
+  return getManualOnlyModelsForRegion(region).includes(modelId);
+}
+
+export function getModelRequiredEntitlements(modelId: string): string[] | undefined {
+  const entitlements = MODEL_REQUIRED_ENTITLEMENTS[modelId];
+  return entitlements ? [...entitlements] : undefined;
+}
+
 // 状态码映射
 export const STATUS_CODE_MAP = {
   20: 'PROCESSING',

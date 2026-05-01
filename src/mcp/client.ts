@@ -16,6 +16,7 @@ import type { JsonObject, MultipartUploadFile } from "./types.ts";
 
 export interface McpRequestOptions {
   token?: string;
+  includeManual?: boolean;
 }
 
 function resolveTaskType(value: unknown): "image" | "video" {
@@ -102,7 +103,9 @@ export class JimengApiClient {
     const token = this.resolveToken(options);
     const authorization = token ? `Bearer ${token}` : undefined;
     const region = token ? tokenPool.getTokenEntry(token)?.region : undefined;
-    const result = await getLiveModels(authorization, region);
+    const result = await getLiveModels(authorization, region, {
+      includeManual: options?.includeManual,
+    });
     return {
       source: result.source,
       data: result.data,

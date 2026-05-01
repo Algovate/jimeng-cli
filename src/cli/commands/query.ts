@@ -190,11 +190,16 @@ function printModelVerbose(models: unknown[]): void {
     if (!id) continue;
     const type = typeof m.model_type === "string" ? m.model_type : "-";
     const desc = typeof m.description === "string" ? m.description : "-";
+    const availability = typeof m.availability === "string" ? m.availability : "discoverable";
     const caps = Array.isArray(m.capabilities)
       ? m.capabilities.filter((c): c is string => typeof c === "string").join(",")
       : "-";
     console.log(`${id}  [${type}]  ${desc}`);
+    console.log(`  availability: ${availability}`);
     console.log(`  capabilities: ${caps}`);
+    if (Array.isArray(m.requires_entitlement) && m.requires_entitlement.length > 0) {
+      console.log(`  requires_entitlement: ${m.requires_entitlement.join(", ")}`);
+    }
     const params = m.params;
     if (params && typeof params === "object") {
       for (const [key, vals] of Object.entries(params as Record<string, unknown>)) {
@@ -246,7 +251,7 @@ export function createQueryCommandHandlers(deps: QueryDeps) {
   const handleModelsList = async (argv: string[]): Promise<void> => {
     const args = minimist(argv, {
       string: ["region", "token"],
-      boolean: ["help", "json", "verbose", "all"],
+      boolean: ["help", "json", "verbose", "all", "all-known"],
     });
     if (args.help) {
       console.log(deps.usageModelsList());
@@ -257,6 +262,8 @@ export function createQueryCommandHandlers(deps: QueryDeps) {
     const isVerbose = Boolean(args.verbose);
     const explicitRegion = deps.getSingleString(args, "region");
     const explicitToken = deps.getSingleString(args, "token");
+
+    const includeManual = Boolean(args["all-known"]);
 
     await deps.ensureTokenPoolReady();
 
@@ -273,7 +280,9 @@ export function createQueryCommandHandlers(deps: QueryDeps) {
         entries.map(async (entry): Promise<JsonRecord> => {
           const masked = maskToken(entry.token);
           try {
-            const direct = await getLiveModels(`Bearer ${entry.token}`, entry.region);
+            const direct = await getLiveModels(`Bearer ${entry.token}`, entry.region, {
+              includeManual,
+            });
             return {
               token: masked,
               region: entry.region,
@@ -308,7 +317,9 @@ export function createQueryCommandHandlers(deps: QueryDeps) {
 
     // Single query
     const { token, region } = resolveSingleQueryToken(explicitToken, explicitRegion, deps);
-    const direct = await getLiveModels(token ? `Bearer ${token}` : undefined, region);
+    const direct = await getLiveModels(token ? `Bearer ${token}` : undefined, region, {
+      includeManual,
+    });
     const models = direct.data;
 
     if (isJson) {

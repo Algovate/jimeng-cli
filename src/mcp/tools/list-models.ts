@@ -12,6 +12,7 @@ export function registerListModelsTool({ server, client }: ToolDeps): void {
       inputSchema: listModelsInputSchema,
       annotations: { readOnlyHint: true }
     },
-    async ({ token }) => client.listModels({ token })
+    async ({ token, include_manual }) =>
+      client.listModels({ token, includeManual: include_manual })
   );
 }

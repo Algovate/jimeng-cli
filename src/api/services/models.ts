@@ -1,7 +1,12 @@
 import {
+  getManualOnlyModelsForRegion,
+  getModelRequiredEntitlements,
   IMAGE_MODEL_MAP,
   IMAGE_MODEL_MAP_ASIA,
   IMAGE_MODEL_MAP_US,
+  isManualOnlyModel,
+  type ModelAvailability,
+  type SupportedRegionCode,
   VIDEO_MODEL_MAP,
   VIDEO_MODEL_MAP_ASIA,
   VIDEO_MODEL_MAP_US,
@@ -23,11 +28,14 @@ type ModelItem = {
   object: "model";
   owned_by: "jimeng-cli";
   model_type: "image" | "video";
+  availability?: ModelAvailability;
   model_req_key?: string;
   model_name?: string;
   description?: string;
   capabilities?: string[];
+  hidden?: boolean;
   params?: ModelParams;
+  requires_entitlement?: string[];
 };
 
 type CachedResult = {
@@ -74,18 +82,28 @@ type UpstreamModelMeta = {
   params: ModelParams;
 };
 
-function buildModelItem(modelId: string, meta?: UpstreamModelMeta): ModelItem {
+function buildModelItem(
+  modelId: string,
+  meta?: UpstreamModelMeta,
+  availability: ModelAvailability = "discoverable"
+): ModelItem {
   const modelType: "image" | "video" = modelId.startsWith("jimeng-video-") ? "video" : "image";
   const item: ModelItem = {
     id: modelId,
     object: "model",
     owned_by: "jimeng-cli",
     model_type: modelType,
+    availability,
   };
   if (meta?.reqKey) item.model_req_key = meta.reqKey;
   if (meta?.modelName) item.model_name = meta.modelName;
   if (meta?.capabilities?.length) item.capabilities = Array.from(new Set(meta.capabilities)).sort();
   if (meta?.params && Object.keys(meta.params).length > 0) item.params = meta.params;
+  if (availability === "manual") {
+    item.hidden = true;
+    const entitlements = getModelRequiredEntitlements(modelId);
+    if (entitlements?.length) item.requires_entitlement = entitlements;
+  }
 
   if (meta?.modelTip) {
     item.description = meta.modelTip;
@@ -151,7 +169,22 @@ export function buildReverseMap(region: RegionCode): Record<string, string> {
 function buildFallbackModels(region: RegionCode): ModelItem[] {
   const maps = getRegionalMaps(region);
   const modelIds = Array.from(new Set(maps.flatMap((item) => Object.keys(item)))).sort();
-  return modelIds.map((id) => buildModelItem(id));
+  return modelIds
+    .filter((id) => !isManualOnlyModel(id, region as SupportedRegionCode))
+    .map((id) => buildModelItem(id));
+}
+
+function appendManualModels(region: RegionCode, items: ModelItem[]): ModelItem[] {
+  const manualModels = getManualOnlyModelsForRegion(region as SupportedRegionCode);
+  if (manualModels.length === 0) return items;
+
+  const existingIds = new Set(items.map((item) => item.id));
+  const manualItems = manualModels
+    .filter((id) => !existingIds.has(id))
+    .sort()
+    .map((id) => buildModelItem(id, undefined, "manual"));
+
+  return [...items, ...manualItems];
 }
 
 function makeCacheKey(region: RegionCode): string {
@@ -242,7 +275,8 @@ export async function fetchConfigModelReqKeys(
 
 export async function getLiveModels(
   authorization?: string,
-  xRegion?: string
+  xRegion?: string,
+  options: { includeManual?: boolean } = {}
 ): Promise<{ source: "upstream" | "fallback"; data: ModelItem[] }> {
   const region = resolveRegion(authorization, xRegion);
   const token = resolveToken(authorization);
@@ -250,7 +284,10 @@ export async function getLiveModels(
   const cacheKey = makeCacheKey(region);
   const cached = modelCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    return { source: cached.source, data: cached.data };
+    return {
+      source: cached.source,
+      data: options.includeManual ? appendManualModels(region, cached.data) : cached.data,
+    };
   }
 
   try {
@@ -280,7 +317,10 @@ export async function getLiveModels(
       data,
     });
 
-    return { source: "upstream", data };
+    return {
+      source: "upstream",
+      data: options.includeManual ? appendManualModels(region, data) : data,
+    };
   } catch {
     const data = buildFallbackModels(region);
     modelCache.set(cacheKey, {
@@ -289,7 +329,10 @@ export async function getLiveModels(
       data,
     });
 
-    return { source: "fallback", data };
+    return {
+      source: "fallback",
+      data: options.includeManual ? appendManualModels(region, data) : data,
+    };
   }
 }
 

@@ -63,6 +63,7 @@ function usageModelsList(): string {
     "  --token <token>          Query with specific token",
     "  --region <region>        Query with specific region (cn/us/hk/jp/sg)",
     "  --all                    Query all tokens in pool, grouped by token/region",
+    "  --all-known              Include manual/hidden models known locally",
     "  --verbose                Print rich model fields",
     "  --json                   Print full JSON response",
     HELP_OPTION,
@@ -72,6 +73,7 @@ function usageModelsList(): string {
       lines: [
         "  Without --token, --region, or --all, uses the first available token in pool.",
         "  With --all, queries every enabled+live token and groups results by token/region.",
+        "  --all-known includes models that are mapped locally but not returned by upstream config.",
       ],
     },
   ]);

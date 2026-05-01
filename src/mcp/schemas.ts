@@ -16,7 +16,8 @@ function normalizeUniqueValues(values: string[]): string[] {
 export const healthCheckInputSchema = z.object({});
 
 export const listModelsInputSchema = z.object({
-  token: z.string().optional()
+  token: z.string().optional(),
+  include_manual: z.boolean().optional(),
 });
 
 export const generateImageInputSchema = z.object({

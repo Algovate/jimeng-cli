@@ -4,6 +4,7 @@ import path from "node:path";
 
 import minimist from "minimist";
 
+import { isManualOnlyModel } from "@/api/constants/common.ts";
 import { buildRegionInfo, type RegionCode } from "@/api/services/core.ts";
 import { generateImageComposition, generateImages, upscaleImage } from "@/api/services/images.ts";
 import { generateVideo } from "@/api/services/videos.ts";
@@ -451,6 +452,11 @@ export function createMediaCommandHandlers(deps: MediaDeps): {
     const outputDir = deps.getSingleString(args, "output-dir") || "./pic/cli-video-generate";
     const model = deps.getSingleString(args, "model")
       || (cliMode === "omni_reference" ? "jimeng-video-seedance-2.0-fast" : "jimeng-video-3.0");
+    if (isManualOnlyModel(model, region as RegionCode)) {
+      console.log(
+        `[warn] ${model} is a manual model for region ${region}. It is mapped locally but may not appear in upstream model discovery, and generation can still fail if the token lacks the required entitlement.`
+      );
+    }
     validateVideoModeAndModel(cliMode, model, inputPlan, usage, { failWithUsage: deps.failWithUsage });
     const functionMode = cliMode === "omni_reference" ? "omni_reference" : "first_last_frames";
     const ratio = deps.getSingleString(args, "ratio") || "1:1";
@@ -598,4 +604,3 @@ export function createMediaCommandHandlers(deps: MediaDeps): {
     handleVideoGenerate,
   };
 }
-

@@ -21,6 +21,7 @@ import {
   buildReverseMap,
   fetchConfigModelReqKeys,
 } from "@/api/services/models.ts";
+import { isManualOnlyModel, type SupportedRegionCode } from "@/api/constants/common.ts";
 
 export interface TokenDynamicCapabilities {
   imageModels?: string[];
@@ -711,10 +712,14 @@ class TokenPool {
     if (candidate.allowedModels?.length) {
       if (!candidate.allowedModels.includes(requestedModel)) return false;
     } else {
+      const isManualModel = isManualOnlyModel(
+        requestedModel,
+        candidate.region as SupportedRegionCode
+      );
       const dynamicModels = taskType === "image"
         ? candidate.dynamicCapabilities?.imageModels
         : candidate.dynamicCapabilities?.videoModels;
-      if (dynamicModels?.length && !dynamicModels.includes(requestedModel)) return false;
+      if (!isManualModel && dynamicModels?.length && !dynamicModels.includes(requestedModel)) return false;
     }
 
     if (requiredCapabilityTags.length) {
