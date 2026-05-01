@@ -1,15 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { DEFAULT_IMAGE_MODEL } from "@/api/consts/common.ts";
-import { buildRegionInfo, type RegionCode } from "@/api/controllers/core.ts";
-import { generateImageComposition, generateImages, upscaleImage } from "@/api/controllers/images.ts";
-import { getLiveModels } from "@/api/controllers/models.ts";
-import { getTaskResponse, waitForTaskResponse, getAssetList } from "@/api/controllers/tasks.ts";
-import { DEFAULT_MODEL as DEFAULT_VIDEO_MODEL, generateVideo } from "@/api/controllers/videos.ts";
-import tokenPool from "@/lib/session-pool.ts";
-import util from "@/lib/util.ts";
-import logger from "@/lib/logger.ts";
+import { DEFAULT_IMAGE_MODEL } from "@/api/constants/common.ts";
+import { buildRegionInfo, type RegionCode } from "@/api/services/core.ts";
+import { generateImageComposition, generateImages, upscaleImage } from "@/api/services/images.ts";
+import { getLiveModels } from "@/api/services/models.ts";
+import { getTaskResponse, waitForTaskResponse, getAssetList } from "@/api/services/tasks.ts";
+import { DEFAULT_MODEL as DEFAULT_VIDEO_MODEL, generateVideo } from "@/api/services/videos.ts";
+import tokenPool from "@/core/runtime/session-pool.ts";
+import util from "@/core/utils/util.ts";
+import logger from "@/core/utils/logger.ts";
 
 import type { McpConfig } from "./config.ts";
 import type { JsonObject, MultipartUploadFile } from "./types.ts";

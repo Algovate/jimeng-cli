@@ -1,20 +1,20 @@
 import process from "node:process";
 
-import config from "@/lib/config.ts";
-import logger from "@/lib/logger.ts";
-import tokenPool from "@/lib/session-pool.ts";
+import config from "@/core/config/config.ts";
+import logger from "@/core/utils/logger.ts";
+import tokenPool from "@/core/runtime/session-pool.ts";
 import {
   parseRegionCode,
   type RegionCode
-} from "@/api/controllers/core.ts";
+} from "@/api/services/core.ts";
 import {
   createTokenSubcommands,
   type TokenSubcommandDef,
   type TokenSubcommandName
-} from "@/cli/token-commands.ts";
-import { createQueryCommandHandlers } from "@/cli/query-commands.ts";
-import { createMediaCommandHandlers } from "@/cli/media-commands.ts";
-import { createLoginCommandHandler } from "@/cli/login.ts";
+} from "@/cli/commands/token.ts";
+import { createQueryCommandHandlers } from "@/cli/commands/query.ts";
+import { createMediaCommandHandlers } from "@/cli/commands/media.ts";
+import { createLoginCommandHandler } from "@/cli/commands/login.ts";
 
 type JsonRecord = Record<string, unknown>;
 type CliHandler = (argv: string[]) => Promise<void>;

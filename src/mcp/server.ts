@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import environment from "@/lib/environment.ts";
+import environment from "@/core/config/environment.ts";
 import type { McpConfig } from "./config.ts";
 import { JimengApiClient } from "./client.ts";
 import { registerMcpTools } from "./tools/index.ts";
