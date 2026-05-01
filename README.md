@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/jimeng-cli.svg)](https://www.npmjs.com/package/jimeng-cli)
 
-即梦/CapCut 图像与视频生成 CLI 工具。支持多区域（CN/US/HK/JP/SG），无需 VIP，普通账号即可使用。
+即梦/CapCut 图像与视频生成 CLI 工具。支持多区域（CN/US/HK/JP/SG）；大部分常规模型可直接配合普通账号使用，部分模型则依赖额外权益。
 
 ## 安装
 
@@ -27,6 +27,9 @@ jimeng video generate --prompt "ocean wave at sunset" --wait
 
 # 查看可用模型
 jimeng models list --verbose
+
+# 查看本地已知但上游未公开枚举的模型
+jimeng models list --all-known --region cn --verbose
 ```
 
 ## 多区域
@@ -67,6 +70,9 @@ jimeng models list --all --verbose
 
 # 查看特定区域的模型
 jimeng models list --region hk --verbose
+
+# 查看某个区域的本地已知模型（含 manual/hidden models）
+jimeng models list --region cn --all-known --verbose
 
 # 查询所有 token 的积分
 jimeng token points --all
@@ -153,9 +159,15 @@ jimeng models list --region jp --verbose
 # 查看所有 token 的模型（按 token/region 分组）
 jimeng models list --all
 
+# 查看本地已知模型（包含上游未公开枚举的 manual models）
+jimeng models list --all-known --region cn --verbose
+
 # 刷新模型能力缓存
 jimeng models refresh
 ```
+
+`jimeng models list` 默认只显示上游配置实际返回的 discoverable models。  
+`jimeng models list --all-known` 会额外显示本地已知但上游未公开枚举的 manual models。后者可以被手动指定尝试调用，但并不代表当前 token 一定具备对应权益。
 
 ### 可用模型
 
@@ -178,10 +190,19 @@ jimeng models refresh
 |------|:--:|:--:|:--------:|
 | jimeng-video-seedance-2.0 | ✓ | ✓ | ✓ |
 | jimeng-video-seedance-2.0-fast | ✓ | ✓ | ✓ |
+| jimeng-video-seedance-2.0-vip | manual | - | - |
+| jimeng-video-seedance-2.0-fast-vip | manual | - | - |
 | jimeng-video-veo3 | - | - | ✓ |
 | jimeng-video-veo3.1 | - | - | ✓ |
 | jimeng-video-sora2 | - | - | ✓ |
 | jimeng-video-3.5-pro | ✓ | ✓ | ✓ |
+
+说明：
+
+- `manual` 表示该模型在本地映射表中已知，但默认不会出现在上游 discoverable model 列表里。
+- 这类模型需要通过 `jimeng models list --all-known` 查看。
+- `jimeng-video-seedance-2.0-vip` 和 `jimeng-video-seedance-2.0-fast-vip` 当前只在 `cn` 区作为 manual model 暴露。
+- 即使模型名可见，实际生成仍取决于当前 token 是否具备对应权益，例如 `vip`。
 
 ## 图像生成
 
@@ -243,6 +264,9 @@ jimeng video generate --prompt "..." --mode omni_reference --image-file ref1.jpg
 
 # 指定区域和模型
 jimeng video generate --prompt "..." --model jimeng-video-veo3 --region jp --wait
+
+# 手动尝试 CN VIP model（需要 token 具备对应权益）
+jimeng video generate --prompt "..." --model jimeng-video-seedance-2.0-vip --region cn --wait
 
 # 指定时长和比例
 jimeng video generate --prompt "..." --duration 10 --ratio 16:9 --wait
